@@ -300,30 +300,74 @@ function render(items, parent, scale, list, inh) {
     }
     if (it.t === 't') {
       const title = it.font === 'title';
-      const t = el('text', { x: it.x, y: it.y, 'font-size': it.size, 'text-anchor': 'middle', class: 'txt',
-        'font-family': title ? "'Permanent Marker', 'Comic Sans MS', cursive" : "'Caveat', 'Segoe Print', cursive",
-        'font-weight': title ? 400 : 700 });
-      t.textContent = it.s; parent.appendChild(t);
-      if (it.qa) t.dataset.qa = it.qa;
-      const room = Math.min(it.maxW || Infinity, (W - 160 * U) / scale), wNow = t.getComputedTextLength();   // never wider than the screen
-      const words = it.s.split(' ');
-      if (wNow > room * 1.35 && words.length > 2 && !it.oneLine) {   // much too long: break into two balanced lines
-        let best = 1, bestD = Infinity;
-        for (let i = 1; i < words.length; i++) { const d = Math.abs(words.slice(0, i).join(' ').length - words.slice(i).join(' ').length); if (d < bestD) { bestD = d; best = i; } }
-        const lh = it.size * 1.25, lines = [words.slice(0, best).join(' '), words.slice(best).join(' ')];
-        t.remove();
-        lines.forEach((line, li) => {
-          const tl = el('text', { x: it.x, y: it.y - lh / 2 + li * lh, 'font-size': it.size, 'text-anchor': 'middle', class: 'txt',
-            'font-family': title ? "'Permanent Marker', 'Comic Sans MS', cursive" : "'Caveat', 'Segoe Print', cursive", 'font-weight': title ? 400 : 700 });
-          tl.textContent = line; parent.appendChild(tl);
-          const wl = tl.getComputedTextLength();
-          if (wl > room) { tl.setAttribute('font-size', (it.size * room / wl).toFixed(1)); tl.dataset.shrink = (room / wl).toFixed(2); }
-          list.push({ el: tl, kind: 't', seq: (it.seq ?? inh ?? 2) + li * .01, ord: it.ord + li * .5 });
-        });
-        continue;
+      const family = title ? "'Permanent Marker', 'Comic Sans MS', cursive" : "'Caveat', 'Segoe Print', cursive";
+      const weight = title ? 400 : 700;
+      const room = Math.max(40, Math.min(it.maxW || Infinity, (W - 160 * U) / scale));
+      const requestedSize = Math.max(12, +it.size || 12);
+      const probe = el('text', { x: 0, y: 0, 'font-size': requestedSize, 'font-family': family, 'font-weight': weight });
+      probe.style.visibility = 'hidden';
+      probe.textContent = 'M';
+      parent.appendChild(probe);
+      const measure = value => { probe.textContent = value; return probe.getComputedTextLength(); };
+      const wrapLine = raw => {
+        const words = String(raw).trim().split(/\s+/).filter(Boolean);
+        if (!words.length) return [''];
+        const result = [];
+        let line = '';
+        for (const word of words) {
+          const candidate = line ? `${line} ${word}` : word;
+          if (measure(candidate) <= room) { line = candidate; continue; }
+          if (line) result.push(line);
+          // Keep even unusually long words (URLs, IDs, unbroken strings) inside the frame.
+          if (measure(word) > room) {
+            let piece = '';
+            for (const ch of Array.from(word)) {
+              if (piece && measure(piece + ch) > room) { result.push(piece); piece = ch; }
+              else piece += ch;
+            }
+            line = piece;
+          } else line = word;
+        }
+        if (line) result.push(line);
+        return result.length ? result : [''];
+      };
+      let lines = String(it.s ?? '').split(/\r?\n/).flatMap(wrapLine);
+      // A small safety margin prevents font metric differences between preview and export.
+      while (lines.some(line => measure(line) > room) && requestedSize > 12) {
+        probe.setAttribute('font-size', Math.max(12, +probe.getAttribute('font-size') * .94));
       }
-      if (wNow > room) { t.setAttribute('font-size', (it.size * room / wNow).toFixed(1)); t.dataset.shrink = (room / wNow).toFixed(2); }
-      list.push({ el: t, kind: 't', seq: it.seq ?? inh ?? 2, ord: it.ord }); continue;
+      let fontSize = +probe.getAttribute('font-size') || requestedSize;
+      // Fit the entire multiline block vertically before creating the animated text strokes.
+      const safeTop = 48 * U / scale, safeBottom = (H - 48 * U) / scale;
+      let lineHeight = fontSize * 1.18;
+      const blockHeight = Math.max(1, lines.length) * lineHeight;
+      if (blockHeight > safeBottom - safeTop) {
+        fontSize *= (safeBottom - safeTop) / blockHeight;
+        lineHeight = fontSize * 1.18;
+      }
+      let firstY = it.y - ((lines.length - 1) * lineHeight) / 2;
+      if (firstY - fontSize * .82 < safeTop) firstY = safeTop + fontSize * .82;
+      if (firstY + (lines.length - 1) * lineHeight + fontSize * .22 > safeBottom) {
+        firstY = safeBottom - fontSize * .22 - (lines.length - 1) * lineHeight;
+      }
+      probe.remove();
+      lines.forEach((line, li) => {
+        const tl = el('text', { x: it.x, y: firstY + li * lineHeight, 'font-size': fontSize,
+          'text-anchor': 'middle', class: 'txt', 'font-family': family, 'font-weight': weight });
+        tl.textContent = line;
+        parent.appendChild(tl);
+        if (it.qa) tl.dataset.qa = it.qa;
+        const measured = tl.getComputedTextLength();
+        if (measured > room) {
+          const fitted = Math.max(12, fontSize * room / measured * .97);
+          tl.setAttribute('font-size', fitted.toFixed(1));
+          tl.dataset.shrink = (fitted / requestedSize).toFixed(2);
+        } else if (fontSize < requestedSize) {
+          tl.dataset.shrink = (fontSize / requestedSize).toFixed(2);
+        }
+        list.push({ el: tl, kind: 't', seq: (it.seq ?? inh ?? 2) + li * .01, ord: it.ord + li * .5 });
+      });
+      continue;
     }
     const p = el('path', { d: it.d, class: it.t === 'a' ? 'acc' : 'ink', 'stroke-width': (it.w / scale).toFixed(2) });
     if (it.qa) p.dataset.qa = it.qa;
