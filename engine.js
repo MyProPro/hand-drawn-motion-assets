@@ -305,7 +305,23 @@ function render(items, parent, scale, list, inh) {
         'font-weight': title ? 400 : 700 });
       t.textContent = it.s; parent.appendChild(t);
       if (it.qa) t.dataset.qa = it.qa;
-      const room = it.maxW || (W - 160) / scale, wNow = t.getComputedTextLength();
+      const room = Math.min(it.maxW || Infinity, (W - 160 * U) / scale), wNow = t.getComputedTextLength();   // never wider than the screen
+      const words = it.s.split(' ');
+      if (wNow > room * 1.35 && words.length > 2 && !it.oneLine) {   // much too long: break into two balanced lines
+        let best = 1, bestD = Infinity;
+        for (let i = 1; i < words.length; i++) { const d = Math.abs(words.slice(0, i).join(' ').length - words.slice(i).join(' ').length); if (d < bestD) { bestD = d; best = i; } }
+        const lh = it.size * 1.25, lines = [words.slice(0, best).join(' '), words.slice(best).join(' ')];
+        t.remove();
+        lines.forEach((line, li) => {
+          const tl = el('text', { x: it.x, y: it.y - lh / 2 + li * lh, 'font-size': it.size, 'text-anchor': 'middle', class: 'txt',
+            'font-family': title ? "'Permanent Marker', 'Comic Sans MS', cursive" : "'Caveat', 'Segoe Print', cursive", 'font-weight': title ? 400 : 700 });
+          tl.textContent = line; parent.appendChild(tl);
+          const wl = tl.getComputedTextLength();
+          if (wl > room) { tl.setAttribute('font-size', (it.size * room / wl).toFixed(1)); tl.dataset.shrink = (room / wl).toFixed(2); }
+          list.push({ el: tl, kind: 't', seq: (it.seq ?? inh ?? 2) + li * .01, ord: it.ord + li * .5 });
+        });
+        continue;
+      }
       if (wNow > room) { t.setAttribute('font-size', (it.size * room / wNow).toFixed(1)); t.dataset.shrink = (room / wNow).toFixed(2); }
       list.push({ el: t, kind: 't', seq: it.seq ?? inh ?? 2, ord: it.ord }); continue;
     }
@@ -334,6 +350,89 @@ const S = SCENES.map((sc, k) => {
   list.sort((a, b) => a.seq - b.seq || a.ord - b.ord);
   return { page, poly, list, hold: sc.hold, content: g };
 });
+
+// ---------- automatic layout fixer (runs before timing, so the hand follows the fixed positions) ----------
+// Repairs what an AI-written scene often gets wrong: text inside a bubble/box that is too wide for it,
+// items outside the safe area, and items that overlap. video.autofix = false turns it off.
+const FIXED = [];
+if (VIDEO.autofix !== false) S.forEach((sc, k) => {
+  const M = 56 * U, gap = 18 * U;
+  const nodes = [...sc.content.children].filter(n => !n.classList.contains('acc') && n.dataset.qa !== 'skip');
+  const box = n => stageBox(n);
+  const area = b => (b.x1 - b.x0) * (b.y1 - b.y0);
+  const inside = (a, c, pad = 8) => c.x0 >= a.x0 - pad && c.x1 <= a.x1 + pad && c.y0 >= a.y0 - pad && c.y1 <= a.y1 + pad;
+  const hit = (a, c) => { const ix = Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0), iy = Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0);
+    return ix > 10 && iy > 10 && ix * iy > .06 * Math.min(area(a), area(c)) && !inside(a, c) && !inside(c, a); };
+  const isText = n => n.tagName === 'text';
+  const move = (n, dx, dy) => {
+    if (isText(n)) { n.setAttribute('x', +n.getAttribute('x') + dx); n.setAttribute('y', +n.getAttribute('y') + dy); }
+    else n.setAttribute('transform', `translate(${dx.toFixed(1)} ${dy.toFixed(1)}) ${n.getAttribute('transform') || ''}`);
+  };
+  const shrink = (n, f) => {
+    if (isText(n)) { n.setAttribute('font-size', (+n.getAttribute('font-size') * f).toFixed(1)); return; }
+    const b = box(n), cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+    n.setAttribute('transform', `translate(${cx.toFixed(1)} ${cy.toFixed(1)}) scale(${f.toFixed(3)}) translate(${(-cx).toFixed(1)} ${(-cy).toFixed(1)}) ${n.getAttribute('transform') || ''}`);
+  };
+  const fitBounds = n => {
+    let b = box(n); if (!b) return;
+    const kw = (W - 2 * M) / (b.x1 - b.x0), kh = (H - 2 * M) / (b.y1 - b.y0);
+    if (kw < 1 || kh < 1) { shrink(n, Math.min(kw, kh) * .97); b = box(n); }
+    const dx = b.x0 < M ? M - b.x0 : b.x1 > W - M ? W - M - b.x1 : 0, dy = b.y0 < M ? M - b.y0 : b.y1 > H - M ? H - M - b.y1 : 0;
+    if (dx || dy) { move(n, dx, dy); return true; }
+  };
+  // 1) text whose centre sits inside a drawing (bubble, button, sign) but sticks out: shrink it to fit inside
+  for (const t of nodes.filter(isText)) for (const d of nodes.filter(n => !isText(n))) {
+    const tb = box(t), db = box(d); if (!tb || !db) continue;
+    const cx = (tb.x0 + tb.x1) / 2, cy = (tb.y0 + tb.y1) / 2;
+    if (cx > db.x0 && cx < db.x1 && cy > db.y0 && cy < db.y1 && !inside(db, tb, 4) && area(db) > area(tb)) {
+      const f = Math.min(1, (db.x1 - db.x0) * .84 / (tb.x1 - tb.x0), (db.y1 - db.y0) * .8 / (tb.y1 - tb.y0));
+      if (f < .98) { shrink(t, f); const nb = box(t); move(t, cx - (nb.x0 + nb.x1) / 2, cy - (nb.y0 + nb.y1) / 2); FIXED.push(k + 1); }
+    }
+  }
+  // attachments: text centred in a drawing, and arrows (qa=skip) near a drawing, travel with that drawing
+  const drawingsAll = nodes.filter(n => !isText(n));
+  const attached = new Map(), attachedTo = new Set();
+  const nearest = (b, maxD) => { let best = null, bd = maxD;
+    for (const d of drawingsAll) { const db = box(d); if (!db) continue;
+      const dx = Math.max(db.x0 - b.x1, b.x0 - db.x1, 0), dy = Math.max(db.y0 - b.y1, b.y0 - db.y1, 0), dist = Math.hypot(dx, dy);
+      if (dist < bd) { bd = dist; best = d; } }
+    return best; };
+  for (const t of nodes.filter(isText)) { const tb = box(t); if (!tb) continue; const cx = (tb.x0 + tb.x1) / 2, cy = (tb.y0 + tb.y1) / 2;
+    const d = drawingsAll.find(d => { const db = box(d); return db && cx > db.x0 && cx < db.x1 && cy > db.y0 && cy < db.y1 && area(db) > area(tb); });
+    if (d) { (attached.get(d) || attached.set(d, []).get(d)).push(t); attachedTo.add(t); } }
+  for (const a of [...sc.content.children].filter(n => n.dataset.qa === 'skip' && !n.classList.contains('acc'))) {
+    const ab = box(a); const d = ab && nearest(ab, 160 * U); if (d) (attached.get(d) || attached.set(d, []).get(d)).push(a); }
+  const baseMove = move;
+  const moveAll = (n, dx, dy) => { baseMove(n, dx, dy); for (const c of attached.get(n) || []) baseMove(c, dx, dy); };
+  // 2) keep everything inside the safe area
+  for (const n of nodes) if (!attachedTo.has(n)) { const b0 = box(n); if (fitBounds(n)) { const b1 = box(n);
+    for (const c of attached.get(n) || []) baseMove(c, (b1.x0 + b1.x1 - b0.x0 - b0.x1) / 2, (b1.y0 + b1.y1 - b0.y0 - b0.y1) / 2); FIXED.push(k + 1); } }
+  // 3) resolve overlaps: place items in reading order; move a colliding item to the nearest free spot, shrink if there is none
+  const placed = [];
+  // big items keep their place; smaller ones move out of their way
+  const order = nodes.filter(n => !attachedTo.has(n)).map(n => ({ n, b: box(n) })).filter(o => o.b).sort((a, c) => area(c.b) - area(a.b));
+  const container = (o, others) => others.some(p => { const cx = (o.b.x0 + o.b.x1) / 2, cy = (o.b.y0 + o.b.y1) / 2;
+    return (cx > p.b.x0 && cx < p.b.x1 && cy > p.b.y0 && cy < p.b.y1 && area(p.b) > 2 * area(o.b)) || inside(p.b, o.b); });
+  for (const o of order) {
+    for (let tries = 0; tries < 4; tries++) {
+      o.b = box(o.n);
+      const clash = placed.filter(p => hit(p.b, o.b) && !container(o, [p]) && !container(p, [o]));
+      if (!clash.length) break;
+      const cands = [];
+      for (const p of clash) {
+        cands.push([0, p.b.y1 + gap - o.b.y0], [0, p.b.y0 - gap - o.b.y1], [p.b.x1 + gap - o.b.x0, 0], [p.b.x0 - gap - o.b.x1, 0]);
+      }
+      const ok = cands.map(([dx, dy]) => ({ dx, dy, d: Math.hypot(dx, dy) })).sort((a, c) => a.d - c.d).find(({ dx, dy }) => {
+        const nb = { x0: o.b.x0 + dx, x1: o.b.x1 + dx, y0: o.b.y0 + dy, y1: o.b.y1 + dy };
+        return nb.x0 >= M && nb.x1 <= W - M && nb.y0 >= M && nb.y1 <= H - M && !placed.some(p => hit(p.b, nb) && !container({ b: nb }, [p]));
+      });
+      if (ok) { moveAll(o.n, ok.dx, ok.dy); FIXED.push(k + 1); break; }
+      shrink(o.n, .85); FIXED.push(k + 1);
+    }
+    o.b = box(o.n); placed.push(o);
+  }
+});
+if (FIXED.length) console.info(`HandDrawn: layout fixed automatically in scene(s) ${[...new Set(FIXED)].join(', ')}`);
 
 // ---------- page flip geometry ----------
 const FLIP = 1.3, TILT = Math.round(Math.min(W, H) / 3);
