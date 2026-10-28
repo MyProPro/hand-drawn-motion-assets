@@ -11,7 +11,7 @@ return (async () => {
 document.documentElement.lang = document.documentElement.lang || 'id';
 if (!document.querySelector('link[data-hd-fonts]')) { const l = document.createElement('link'); l.rel = 'stylesheet'; l.dataset.hdFonts = '1';
   l.href = 'https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Permanent+Marker&display=swap'; document.head.appendChild(l); }
-{ const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st); }
+{ const st = document.createElement('style'); st.textContent = CSS + ' .qa{color:#ffb8a8;font-size:13px;line-height:1.5;border:1px solid #6b3b33;border-radius:6px;padding:8px 12px;background:#2e2220}'; document.head.appendChild(st); }
 document.body.insertAdjacentHTML('afterbegin', MARKUP.replace('Animasi whiteboard', (cfg.title || 'Animasi whiteboard').replace(/"/g, '')));
 const NS = 'http://www.w3.org/2000/svg';
 // ---------- video settings (filled from the intake: ratio and target length) ----------
@@ -81,8 +81,8 @@ const G = (x, y, s, r, items, seq) => ({ t: 'g', x, y, s, r, items, seq }); // s
 function arrow(x1, y1, x2, y2, bend = 60) {
   const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy);
   const cx = mx - dy / L * bend, cy = my + dx / L * bend, a = Math.atan2(y2 - cy, x2 - cx), h = 26;
-  return [P(`M${x1},${y1} Q${f(cx)},${f(cy)} ${x2},${y2}`),
-          P(`M${f(x2 - h * Math.cos(a - .5))},${f(y2 - h * Math.sin(a - .5))} L${x2},${y2} L${f(x2 - h * Math.cos(a + .5))},${f(y2 - h * Math.sin(a + .5))}`, 4)];
+  return [{ ...P(`M${x1},${y1} Q${f(cx)},${f(cy)} ${x2},${y2}`), qa: 'skip' },
+          { ...P(`M${f(x2 - h * Math.cos(a - .5))},${f(y2 - h * Math.sin(a - .5))} L${x2},${y2} L${f(x2 - h * Math.cos(a + .5))},${f(y2 - h * Math.sin(a + .5))}`, 4), qa: 'skip' }];
 }
 
 // ---------- doodles (local coordinates around 0,0) ----------
@@ -102,15 +102,188 @@ const bell = sd => [A(scrib(0, -6, 60, 60, 7, sd), 16),
   P('M-42,30 C-40,-18 -30,-50 0,-52 C30,-50 40,-18 42,30'), P('M-58,32 Q0,40 58,32'), P(circ(0, 46, 9, sd + 1), 4),
   P(circ(0, -62, 7, sd + 2), 3.5), P('M-72,-30 Q-84,-6 -74,18', 3), P('M72,-30 Q84,-6 74,18', 3)];
 
+const CX = W / 2, CY = H / 2, U = Math.min(W, H) / 1080, TALL = H > W, NARROW = W / H < 1.5;   // NARROW = 9:16 or 1:1
+// ---------- icon library (local coords, ~260 px tall, centred on 0,0) ----------
+// Every icon is icon.name(seed?, option?) → item list. Place with G(x, y, scale, rotate, icon.name(…), seq)
+// or let a layout place it: layout.point({ icon: 'plug' }) / { icon: icon.person(3, 'shock') }.
+const R_ = roundRect;
+const icon = {
+  person: (sd = 1, mood = 'happy') => {
+    const face = {
+      happy: [P(circ(-17, -128, 5, sd + 1, 5, 1.2), 4), P(circ(17, -128, 5, sd + 2, 5, 1.2), 4), P('M-18,-104 Q0,-88 18,-104', 4)],
+      shock: [P(circ(-17, -128, 8, sd + 1), 3.5), P(circ(17, -128, 8, sd + 2), 3.5), P(circ(0, -96, 10, sd + 3, 12), 3.5)],
+      think: [P(circ(-17, -128, 5, sd + 1, 5, 1.2), 4), P(circ(17, -128, 5, sd + 2, 5, 1.2), 4), P('M-14,-98 L14,-101', 4)],
+      sad:   [P(circ(-17, -128, 5, sd + 1, 5, 1.2), 4), P(circ(17, -128, 5, sd + 2, 5, 1.2), 4), P('M-18,-94 Q0,-108 18,-94', 4)],
+    }[mood] || [];
+    const arms = {
+      happy: [P('M-62,-6 Q-100,-40 -112,-82', 5), P('M62,-6 Q80,30 86,62', 5)],
+      shock: [P('M-62,-10 Q-96,-60 -74,-112', 5), P('M62,-10 Q96,-60 74,-112', 5), P('M-92,-150 L-110,-170 M92,-150 L110,-170', 3.5)],
+      think: [P('M-62,-6 Q-78,30 -82,62', 5), P('M50,-10 Q20,-40 10,-84', 5), P(circ(72, -182, 7, sd + 4), 3), P(circ(100, -214, 11, sd + 5), 3)],
+      sad:   [P('M-62,-6 Q-76,30 -80,66', 5), P('M62,-6 Q76,30 80,66', 5)],
+    }[mood] || [];
+    return [P(circ(0, -122, 50, sd, 52), 5), P('M-48,-138 Q-34,-182 0,-176 Q38,-182 50,-134', 4.5), ...face,
+      P('M-72,90 C-72,-30 -44,-62 0,-62 C44,-62 72,-30 72,90', 5), ...arms];
+  },
+  house: () => [P('M-140,-20 L0,-140 L140,-20', 5.5), P('M-110,-40 L-110,115 L110,115 L110,-40', 5),
+    P('M-28,115 L-28,40 L28,40 L28,115', 4), P('M50,0 L90,2 L88,42 L50,40 Z', 3.5), P('M62,-88 L62,-124 L90,-124 L90,-64', 4)],
+  socket: sd => [P(R_(220, 300, 30), 5), P(circ(0, 0, 76, sd), 4.5), P('M-30,-12 L-30,14 M30,-12 L30,14', 7)],
+  plug: sd => [A(scrib(0, -10, 90, 90, 6, sd), 18), P('M-60,-80 L60,-80 L70,50 Q0,82 -70,50 Z', 5),
+    P('M-28,-82 L-28,-140 M28,-82 L28,-140', 7), P('M0,72 C12,130 -46,150 -18,190', 5)],
+  bulb: (sd = 1, kind = 'on') => {
+    const body = [P(circ(0, -40, 86, sd, 90, 1.05), 5), P('M-42,40 L-36,86 L36,86 L42,40 M-32,106 L32,106 M-22,124 L22,124', 4)];
+    if (kind === 'old') return [...body, P('M-28,-18 L-14,-52 L0,-18 L14,-52 L28,-18', 3.5)];
+    return [A(scrib(0, -40, 120, 110, 7, sd + 1), 26), ...body, P('M-28,-30 L28,-30', 5),
+      P('M0,-152 L0,-196 M-98,-118 L-130,-148 M98,-118 L130,-148', 4.5)];
+  },
+  ac: sd => [A(scrib(-40, -15, 280, 50, 10, sd), 22), P(R_(400, 150, 24), 5), P('M-170,30 L170,30', 3),
+    P('M110,-50 L165,-50 L165,-20 L110,-20 Z', 3.5),
+    P('M-110,90 C-128,135 -90,160 -112,205 M0,90 C-18,135 22,160 0,205 M110,90 C92,135 130,160 108,205', 4)],
+  remote: sd => [P(R_(130, 290, 24), 5), P('M-40,-110 L40,-110 L40,-40 L-40,-40 Z', 4), T('25°', 0, -60, 48, 'title'), P(circ(0, 30, 18, sd), 3.5), P('M-28,80 L28,80', 4)],
+  fan: sd => [P(circ(0, -40, 110, sd), 5), ...[0, 120, 240].map(a => G(0, -40, 1, a, [P('M0,0 C26,-20 52,-66 16,-88 C-10,-70 -10,-30 0,0', 4)])),
+    P(circ(0, -40, 12, sd + 1), 4), P('M0,70 L0,150 M-70,150 L70,150', 5)],
+  tv: () => [P(R_(280, 180, 18), 5), P('M-110,-60 L-80,-75', 3.5), P('M-40,92 L-62,135 M40,92 L62,135 M-90,135 L90,135', 4.5)],
+  fridge: () => [P(R_(170, 300, 18), 5), P('M-85,-40 L85,-40', 4), P('M55,-110 L55,-75 M55,-5 L55,45', 6)],
+  battery: (sd = 1, level = .4) => [A(scrib(-110 + 110 * level, 0, 220 * level - 20, 70, 6, sd), 24), P(R_(240, 120, 18), 5),
+    P('M120,-28 L142,-28 L142,28 L120,28', 5)],
+  bolt: sd => [A('M-12,-70 L18,-70 L-6,0 L20,0 L-26,70', 20), P('M-15,-110 L45,-110 L-8,-10 L40,-10 L-50,110 L-18,25 L-55,25 Z', 5)],
+  sun: sd => [A(scrib(0, 0, 90, 90, 6, sd), 22), P(circ(0, 0, 62, sd + 1), 5),
+    P([0, 45, 90, 135, 180, 225, 270, 315].map(a => { const c = Math.cos(a * Math.PI / 180), s = Math.sin(a * Math.PI / 180); return `M${f(c * 90)},${f(s * 90)} L${f(c * 125)},${f(s * 125)}`; }).join(' '), 4.5)],
+  solar: () => [P('M-140,40 L-90,-90 L140,-90 L90,40 Z', 5), P('M-115,-25 L115,-25 M-57,40 L-12,-90 M27,40 L72,-90', 3), P('M0,40 L0,120 M-50,120 L50,120', 5)],
+  coin: sd => [A(scrib(0, 0, 80, 80, 6, sd), 22), P(circ(0, 0, 80, sd + 1), 5), P(circ(0, 0, 62, sd + 2), 3), T('Rp', 0, 18, 52, 'title')],
+  coins: sd => [P(circ(0, 60, 90, sd, 28), 5), P('M-90,60 L-90,90 M90,60 L90,90', 5), P('M-90,90 Q0,122 90,90', 5),
+    P(circ(0, 10, 90, sd + 1, 28), 5), P('M-90,10 L-90,40 M90,10 L90,40', 5), P(circ(0, -40, 90, sd + 2, 28), 5), P('M-90,-40 L-90,-10 M90,-40 L90,-10', 5)],
+  money: sd => [A(scrib(0, 0, 200, 70, 9, sd), 24), P(R_(280, 140, 14), 5), P(circ(0, 0, 40, sd + 1), 4), T('Rp', 0, 14, 40, 'title'), P('M-120,-50 L-90,-50 M90,50 L120,50', 3.5)],
+  wallet: sd => [P(R_(260, 170, 22), 5), P('M30,-38 L130,-38 L130,38 L30,38', 5), P(circ(64, 0, 10, sd), 4), P('M-130,-55 L90,-55', 3.5)],
+  receipt: (sd = 1, label = 'Rp ???') => [A(scrib(0, 40, 200, 44, 9, sd), 24),
+    P('M-120,-150 L120,-148 L121,120 L96,144 L72,120 L48,144 L24,120 L0,144 L-24,120 L-48,144 L-72,120 L-96,144 L-120,120 L-121,-146', 5),
+    P('M-80,-100 L50,-100 M-80,-62 L80,-62', 4), T(label, 0, 62, 58, 'title', undefined, 220)],
+  piggy: sd => [A(scrib(-10, 0, 150, 90, 7, sd), 24), P(circ(0, 0, 112, sd + 1, 82), 5), P('M-36,-70 L-20,-104 L0,-76', 4.5),
+    P(circ(110, 6, 22, sd + 2, 28), 4.5), P('M104,0 L104,10 M116,0 L116,10', 3), P(circ(45, -25, 5, sd + 3), 4),
+    P('M-60,72 L-60,108 M50,72 L50,108', 5), P('M-112,-8 C-142,-30 -152,12 -126,16', 4), P('M-26,-80 L24,-80', 5)],
+  clock: sd => [P(circ(0, 0, 105, sd), 5.5), P('M0,0 L0,-66 M0,0 L50,22', 5.5), P('M0,-90 L0,-80 M90,0 L80,0 M0,90 L0,80 M-90,0 L-80,0', 4)],
+  calendar: sd => [P(R_(230, 220, 18), 5), P('M-115,-50 L115,-50', 4.5), P('M-55,-132 L-55,-92 M55,-132 L55,-92', 6),
+    P('M-70,0 L-40,0 M-15,0 L15,0 M40,0 L70,0 M-70,50 L-40,50 M-15,50 L15,50', 4), A(scrib(55, 50, 40, 30, 4, sd), 20), P(circ(55, 50, 26, sd + 1), 4)],
+  hourglass: sd => [A('M-30,80 L30,80 L0,40 Z', 18), P('M-70,-120 L70,-120 M-70,120 L70,120', 5.5),
+    P('M-55,-120 C-55,-40 -12,-18 -12,0 C-12,18 -55,40 -55,120 M55,-120 C55,-40 12,-18 12,0 C12,18 55,40 55,120', 5)],
+  phone: sd => [P(R_(140, 260, 26), 5), P('M-52,-96 L52,-96 L52,84 L-52,84 Z', 3.5), P(circ(0, 108, 9, sd), 3.5)],
+  laptop: () => [P(R_(250, 170, 14), 5), P('M-100,-60 L-70,-78', 3.5), P('M-160,90 L160,90 L136,118 L-136,118 Z', 5)],
+  wifi: sd => [P('M-120,-40 Q0,-140 120,-40', 5), P('M-80,0 Q0,-70 80,0', 5), P('M-40,40 Q0,5 40,40', 5), P(circ(0, 78, 10, sd), 6)],
+  lock: sd => [A(scrib(0, 40, 110, 70, 6, sd), 20), P(R_(170, 140, 20), 5), P('M-50,-70 L-50,-110 C-50,-170 50,-170 50,-110 L50,-70', 5),
+    P(circ(0, 30, 14, sd + 1), 4), P('M0,44 L0,74', 5)],
+  gear: sd => [P(circ(0, 0, 78, sd), 5),
+    P([0, 45, 90, 135, 180, 225, 270, 315].map(a => { const c = Math.cos(a * Math.PI / 180), s = Math.sin(a * Math.PI / 180); return `M${f(c * 80)},${f(s * 80)} L${f(c * 112)},${f(s * 112)}`; }).join(' '), 14),
+    P(circ(0, 0, 28, sd + 1), 4.5)],
+  chartUp: sd => [P('M-130,-110 L-130,110 L140,110', 5), A('M-100,70 L-40,10 L10,40 L90,-60', 22), P('M-100,70 L-40,10 L10,40 L100,-75', 5.5), P('M62,-78 L102,-77 L100,-37', 5.5)],
+  chartDown: sd => [P('M-130,-110 L-130,110 L140,110', 5), P('M-100,-70 L-40,-10 L10,-40 L100,75', 5.5), P('M62,78 L102,77 L100,37', 5.5)],
+  bars: sd => [P('M-130,-120 L-130,110 L140,110', 5), P('M-95,110 L-95,40 L-50,40 L-50,110 M-20,110 L-20,-10 L25,-10 L25,110', 4.5),
+    A(scrib(80, 15, 30, 150, 6, sd), 26), P('M55,110 L55,-80 L100,-80 L100,110', 4.5)],
+  check: sd => [A(scrib(0, 0, 160, 130, 7, sd), 26), P('M-90,10 L-25,75 L100,-80', 9)],
+  cross: () => [P('M-80,-80 L80,80', 9), P('M80,-80 L-80,80', 9)],
+  star: sd => [A(scrib(0, 10, 110, 90, 6, sd), 24), P('M0,-110 L28,-36 L106,-34 L44,14 L66,90 L0,46 L-66,90 L-44,14 L-106,-34 L-28,-36 Z', 5)],
+  target: sd => [P(circ(0, 0, 110, sd), 5), P(circ(0, 0, 72, sd + 1), 4.5), A(scrib(0, 0, 50, 50, 5, sd + 2), 22), P(circ(0, 0, 32, sd + 3), 4.5),
+    P('M0,0 L110,-110', 5), P('M90,-110 L110,-110 L110,-90 M100,-130 L130,-100', 4)],
+  trophy: sd => [A(scrib(0, -40, 90, 80, 6, sd), 24), P('M-64,-110 L64,-110 C64,-10 30,20 0,20 C-30,20 -64,-10 -64,-110', 5),
+    P('M-64,-90 C-112,-90 -106,-24 -50,-24 M64,-90 C112,-90 106,-24 50,-24', 4.5), P('M0,20 L0,70 M-56,70 L56,70 L56,104 L-56,104 Z', 5)],
+  magnifier: sd => [P(circ(-20, -20, 80, sd), 5.5), P('M-60,-50 Q-40,-80 -10,-82', 3.5), P('M38,38 L118,118', 10)],
+  megaphone: () => [P('M-80,-36 L70,-100 L70,100 L-80,36 Z', 5), P('M-80,-36 L-116,-36 L-116,36 L-80,36', 5), P('M-90,36 L-70,100 L-40,100 L-56,36', 4.5),
+    P('M100,-50 Q130,0 100,50 M122,-82 Q172,0 122,82', 4)],
+  book: () => [P('M0,-80 C-50,-104 -112,-96 -136,-80 L-136,90 C-112,74 -50,66 0,90 C50,66 112,74 136,90 L136,-80 C112,-96 50,-104 0,-80 L0,90', 5),
+    P('M-110,-40 L-30,-50 M-110,0 L-30,-10 M30,-50 L110,-40 M30,-10 L110,0', 3.5)],
+  pencil: () => [P('M-100,70 L60,-90 L100,-50 L-60,110 L-120,130 Z', 5), P('M40,-70 L80,-30 M-100,70 L-60,110', 4)],
+  chat: (sd = 1, text = '') => [P(R_(280, 170, 40), 5), P('M-60,85 L-90,140 L-10,85', 5), ...(text ? [T(text, 0, 18, 64, 'body', undefined, 230)] : [P('M-80,-25 L80,-25 M-80,20 L40,20', 4)])],
+  warning: sd => [A(scrib(0, 30, 120, 80, 6, sd), 22), P('M0,-120 L130,105 L-130,105 Z', 5.5), P('M0,-40 L0,40', 9), P(circ(0, 72, 6, sd + 1), 8)],
+  leaf: () => [P('M-100,90 C-110,-40 20,-120 120,-110 C110,0 30,100 -100,90', 5), P('M-100,90 C-20,10 30,-30 100,-90', 4)],
+  tree: sd => [P(cloud(0, -50, 230, 190, 9, sd), 5), P('M-22,150 L-16,40 M22,150 L16,40', 5), P('M-16,70 L-50,40 M16,60 L48,30', 4)],
+  drop: sd => [A(scrib(0, 40, 80, 80, 6, sd), 22), P('M0,-110 C40,-50 76,-6 76,34 C76,82 40,110 0,110 C-40,110 -76,82 -76,34 C-76,-6 -40,-50 0,-110', 5), P('M-36,30 Q-34,66 -6,80', 4)],
+  car: sd => [P('M-160,40 L-160,0 L-110,-10 L-70,-66 L70,-66 L110,-10 L160,0 L160,40 Z', 5), P('M-58,-56 L-80,-12 L80,-12 L58,-56', 3.5),
+    P(circ(-88, 46, 30, sd), 5), P(circ(88, 46, 30, sd + 1), 5)],
+  idea: sd => [G(0, 10, 1.9, 0, lightbulb(sd))], heart: sd => [G(0, 30, 2.3, 0, heart(sd))],
+  question: sd => [G(0, 0, 2.2, 0, question(sd))], bell: sd => [G(0, 0, 2, 0, bell(sd))],
+};
+// icon by name or ready item list
+const asIcon = (v, sd = 7) => Array.isArray(v) ? v : (icon[v] ? icon[v](sd) : (console.warn('HandDrawn: unknown icon', v), icon.question(sd)));
+
+// ---------- scene layouts (return a full scene; sizes adapt to 16:9, 9:16 and 1:1) ----------
+const BIG = TALL ? 1.9 * U : NARROW ? 1.55 * U : 1.45 * U;      // main drawing scale
+const TY = TALL ? 290 * U : NARROW ? 170 * U : 180 * U;          // title baseline
+const CAP = TALL ? H * .86 : H - 110 * U;                         // caption baseline
+const TS = TALL ? 112 * U : 92 * U;                               // title size
+const titleT = (s, y = TY, seq = 0) => T(s, CX, y, TS, 'title', seq, W - 180 * U);
+const capT = (s, seq = 2) => s ? [T(s, CX, CAP, TALL ? 66 * U : 60 * U, 'body', seq, W - 200 * U)] : [];
+const layout = {
+  // Hook: big question + one strong picture. { title, sub, icon, cap, side: icon for a small extra (optional) }
+  hook: ({ title, sub = '', icon: ic = 'question', cap = '', side = null, hold = 2.2 }) => ({ hold, items: [
+    titleT(title, sub ? TY : TY + 40 * U, 0),
+    ...(sub ? [T(sub, CX, TY + (TALL ? 125 : 105) * U, (TALL ? 100 : 84) * U, 'body', 0.1, W - 200 * U),
+      A(`M${CX - 240 * U},${TY + (TALL ? 105 : 88) * U} Q${CX},${TY + (TALL ? 92 : 76) * U} ${CX + 240 * U},${TY + (TALL ? 110 : 92) * U}`, 30, 0.2)] : []),
+    G(CX - (side ? 60 : 0) * U, CY + (TALL ? 110 : NARROW ? 80 : 120) * U, BIG * (NARROW && !TALL ? .9 : 1), -2, asIcon(ic, 11), 0.5),
+    ...(side ? [G(CX + (NARROW ? 320 : 420) * U, CY - (TALL ? 170 : 60) * U, BIG * .42, 6, asIcon(side, 12), 1)] : []),
+    ...capT(cap)] }),
+  // One idea: title, one big picture (+ optional label under it, small side icon), caption.
+  point: ({ title, icon: ic, label = '', cap = '', side = null, hold = 2.5 }) => {
+    const s = BIG, y = CY - (label ? (TALL ? 60 : 50) : -30) * U;
+    return { hold, items: [
+      titleT(title),
+      G(CX, y, s, 0, asIcon(ic, 21), 0.5),
+      ...(label ? [T(label, CX, y + 205 * s + 70 * U, (TALL ? 90 : 70) * U, 'title', 0.9, W - 240 * U)] : []),
+      ...(side ? [G(CX + (NARROW ? 330 : 520) * U, CY - (TALL ? 300 : 120) * U, BIG * .4, 8, asIcon(side, 22), 1)] : []),
+      ...capT(cap)] };
+  },
+  // Comparison: left vs right. winner: 'left' | 'right' | null. stat: big highlighted text under the pair.
+  compare: ({ title, left, right, winner = 'right', stat = '', cap = '', hold = 2.6 }) => {
+    const dx = (NARROW ? 250 : 420) * U, s = BIG * (TALL ? .72 : NARROW ? .62 : .7), y = CY - (TALL ? 180 : NARROW ? 70 : 40) * U;
+    const ly = y + 185 * s + 55 * U, sy = ly + (TALL ? 190 : 120) * U;
+    const lab = (o, x, seq) => o.label ? [T(o.label, x, ly, (TALL ? 70 : 58) * U, 'title', seq, dx * 1.5)] : [];
+    const wx = winner === 'left' ? CX - dx : CX + dx, lx = winner === 'left' ? CX + dx : CX - dx;
+    return { hold, items: [
+      titleT(title),
+      G(CX - dx, y, s, 0, asIcon(left.icon, 32), 0.5), G(CX + dx, y, s, 0, asIcon(right.icon, 33), 0.7),
+      ...(winner ? [G(lx, y, s * .95, 0, icon.cross(), 1.6), { ...G(wx + 120 * s, y - 120 * s, s * .5, 0, icon.check(31), 1.7), qa: 'skip' }] : []),
+      ...lab(left, CX - dx, 0.9), ...lab(right, CX + dx, 0.95),
+      ...(stat ? [T(stat, CX, sy, (TALL ? 96 : 72) * U, 'title', 1.9, W - 220 * U),
+        A(`M${CX - 280 * U},${sy - 20 * U} Q${CX},${sy - 32 * U} ${CX + 280 * U},${sy - 14 * U}`, 34, 2)] : []),
+      ...capT(stat && TALL ? '' : cap)] };
+  },
+  // Steps: 2–4 icons with labels, connected by arrows (vertical on 9:16, horizontal otherwise).
+  steps: ({ title, steps, cap = '', hold = 2.8 }) => {
+    const n = steps.length, items = [titleT(title)];
+    const s = TALL ? BIG * .5 : BIG * (NARROW ? .5 : .62);
+    const span = TALL ? (CAP - TY - 560 * U) / Math.max(1, n - 1) : Math.min(560 * U, (W - 420 * U) / Math.max(1, n - 1));
+    steps.forEach((st, i) => {
+      const x = TALL ? CX - 170 * U : CX + (i - (n - 1) / 2) * span, y = TALL ? TY + 230 * U + i * span : CY - 40 * U;
+      items.push(G(x, y, s, 0, asIcon(st.icon, 41 + i), 0.5 + i));
+      items.push(T(st.label, TALL ? CX + 150 * U : x, TALL ? y + 22 * U : y + 225 * s + 50 * U, (TALL ? 64 : 52) * U, 'title', 0.6 + i, TALL ? W * .42 : span * .92));
+      if (i < n - 1) items.push(...(TALL ? arrow(x, y + 160 * s + 20 * U, x, y + span - 160 * s - 20 * U, 30 * U)
+        : arrow(x + 165 * s + 20 * U, y, x + span - 165 * s - 20 * U, y, -30 * U)).map(a => ({ ...a, seq: 0.8 + i })));
+    });
+    return { hold, items: [...items, ...capT(cap, n + 1)] };
+  },
+  // Big number or fact. { title, value: '75%', label, icon }
+  stat: ({ title, value, label = '', icon: ic = null, cap = '', hold = 2.6 }) => ({ hold, items: [
+    titleT(title),
+    ...(ic ? [G(CX, CY - (TALL ? 290 : NARROW ? 225 : 210) * U, BIG * (TALL ? .75 : .58), 0, asIcon(ic, 51), 0.3)] : []),
+    T(value, CX, CY + (ic ? 140 : 40) * U, (TALL ? 260 : 210) * U, 'title', 0.5, W - 200 * U),
+    A(`M${CX - 300 * U},${CY + (ic ? 110 : 10) * U} Q${CX},${CY + (ic ? 95 : -5) * U} ${CX + 300 * U},${CY + (ic ? 115 : 15) * U}`, 60, 0.6),
+    ...(label ? [T(label, CX, CY + (ic ? 270 : 170) * U, (TALL ? 80 : 64) * U, 'body', 0.8, W - 220 * U)] : []),
+    ...capT(cap)] }),
+  // CTA: question/title + marker button + fitting doodle + arrow. icon: 'bell' | 'heart' | 'chat' | any icon
+  cta: ({ title, title2 = '', action = 'FOLLOW', sub = '', icon: ic = 'bell', hold = 3 }) => ({ hold, items: [
+    titleT(title, TY, 0), ...(title2 ? [titleT(title2, TY + TS * 1.5, 0.1)] : []),
+    G(CX, CY + (TALL ? 40 : 60) * U, (TALL ? 1.1 : 1) * U, 0, button(620, 170, 61), 0.5),
+    T(action, CX, CY + (TALL ? 72 : 92) * U, 96 * U, 'title', 0.6, 540 * U),
+    G(CX + (NARROW ? 300 : 420) * U, CY - (TALL ? 210 : NARROW ? 110 : 90) * U, (TALL ? .7 : .55) * U, 10, asIcon(ic, 62), 1),
+    ...arrow(CX - (NARROW ? 330 : 480) * U, CY + (TALL ? 380 : 230) * U, CX - (NARROW ? 240 : 330) * U, CY + (TALL ? 170 : 130) * U, -50 * U).map(a => ({ ...a, seq: 1.2 })),
+    ...capT(sub)] }),
+};
+
 // ---------- look of the drawer ----------
 // null keeps the photo's own colour (black sweater, black pen). Any '#rrggbb' recolours it with texture kept.
 // ink = colour of everything drawn and written (whiteboard style: keep it dark).
 const LOOK = Object.assign({ shirt: null, pen: null, ink: '#1E1E1E' }, cfg.look);
 
 // ---------- scenes (written by the page) ----------
-const CX = W / 2, CY = H / 2, U = Math.min(W, H) / 1080, TALL = H > W, NARROW = W / H < 1.5;   // NARROW = 9:16 or 1:1
 const SCENES = cfg.scenes({ W, H, CX, CY, U, TALL, NARROW, P, A, T, G, arrow, circ, cloud, scrib, smooth, rng,
-  heart, question, spark, curly, lightbulb, button, bell, roundRect });
+  heart, question, spark, curly, lightbulb, button, bell, roundRect, icon, layout });
 
 // ---------- render ----------
 function el(tag, attrs) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
@@ -122,6 +295,7 @@ function render(items, parent, scale, list, inh) {
   for (const it of dom) {
     if (it.t === 'g') {
       const g = el('g', { transform: `translate(${it.x} ${it.y}) rotate(${it.r || 0}) scale(${it.s || 1})` });
+      if (it.qa) g.dataset.qa = it.qa;
       parent.appendChild(g); render(it.items, g, scale * (it.s || 1), list, it.seq ?? inh); continue;
     }
     if (it.t === 't') {
@@ -130,11 +304,13 @@ function render(items, parent, scale, list, inh) {
         'font-family': title ? "'Permanent Marker', 'Comic Sans MS', cursive" : "'Caveat', 'Segoe Print', cursive",
         'font-weight': title ? 400 : 700 });
       t.textContent = it.s; parent.appendChild(t);
+      if (it.qa) t.dataset.qa = it.qa;
       const room = it.maxW || (W - 160) / scale, wNow = t.getComputedTextLength();
-      if (wNow > room) t.setAttribute('font-size', (it.size * room / wNow).toFixed(1));
+      if (wNow > room) { t.setAttribute('font-size', (it.size * room / wNow).toFixed(1)); t.dataset.shrink = (room / wNow).toFixed(2); }
       list.push({ el: t, kind: 't', seq: it.seq ?? inh ?? 2, ord: it.ord }); continue;
     }
     const p = el('path', { d: it.d, class: it.t === 'a' ? 'acc' : 'ink', 'stroke-width': (it.w / scale).toFixed(2) });
+    if (it.qa) p.dataset.qa = it.qa;
     parent.appendChild(p);
     list.push({ el: p, kind: it.t, seq: it.seq ?? inh ?? (it.t === 'a' ? 1 : 0), ord: it.ord });
   }
@@ -142,6 +318,8 @@ function render(items, parent, scale, list, inh) {
 
 const loadFonts = Promise.all([document.fonts.load('80px "Permanent Marker"'), document.fonts.load('700 80px "Caveat"')]).catch(() => {});
 await Promise.race([loadFonts, new Promise(r => setTimeout(r, 3000))]);
+// Some preview frames start hidden; give them a moment to get a size before measuring text.
+for (let i = 0; i < 40 && !(stage.getBoundingClientRect().width > 0); i++) await new Promise(r => setTimeout(r, 100));
 
 // Each scene is a page of paper. Pages are stacked; earlier pages lie on top and are flipped away.
 const fullRect = `0,0 ${W},0 ${W},${H} 0,${H}`;
@@ -154,7 +332,7 @@ const S = SCENES.map((sc, k) => {
   pagesLayer.insertBefore(page, pagesLayer.firstChild);
   number(sc.items); const list = []; render(sc.items, g, 1, list);
   list.sort((a, b) => a.seq - b.seq || a.ord - b.ord);
-  return { page, poly, list, hold: sc.hold };
+  return { page, poly, list, hold: sc.hold, content: g };
 });
 
 // ---------- page flip geometry ----------
@@ -183,20 +361,31 @@ let RELEASE = 1; for (let u = 0; u <= 1; u += 0.01) if (grabAt(u).x < 320) { REL
 
 // ---------- timeline ----------
 const toStage = (M, x, y) => { const p = new DOMPoint(x, y).matrixTransform(M); return { x: p.x, y: p.y }; };
-const stageInv = stage.getScreenCTM().inverse();
+// Element → stage coordinates from the transform attributes only (independent of on-screen size,
+// so it also works in hidden, zero-size or scaled preview frames such as Gemini Canvas).
+function localToStage(el) {
+  let m = new DOMMatrix();
+  for (let n = el; n && n !== stage; n = n.parentNode) {
+    const c = n.transform && n.transform.baseVal && n.transform.baseVal.consolidate();
+    if (c) { const k = c.matrix; m = new DOMMatrix([k.a, k.b, k.c, k.d, k.e, k.f]).multiply(m); }
+  }
+  return m;
+}
 // Pass 1: measure every stroke once.
 S.forEach(sc => {
   let prev = null;
   for (const s of sc.list) {
-    s.M = stageInv.multiply(s.el.getScreenCTM());
+    s.M = localToStage(s.el);
     if (s.kind === 't') {
       s.bb = s.el.getBBox();
+      if (!(s.bb.width > 0)) { const n = s.el.textContent.length, fs = +s.el.getAttribute('font-size');   // hidden frame: estimate
+        s.bb = { x: +s.el.getAttribute('x') - n * fs * .28, y: +s.el.getAttribute('y') - fs * .8, width: n * fs * .56, height: fs }; }
       const id = 'clip' + (clipId++), cp = el('clipPath', { id, clipPathUnits: 'userSpaceOnUse' });
       s.rect = el('rect', { x: s.bb.x - 12, y: s.bb.y - 30, width: 0, height: s.bb.height + 60 });
       cp.appendChild(s.rect); defs.appendChild(cp); s.el.setAttribute('clip-path', `url(#${id})`);
       s.base = clamp(s.bb.width * 0.0026, .4, 1.4);
     } else {
-      s.len = s.el.getTotalLength();
+      s.len = s.el.getTotalLength(); if (!(s.len > 0)) s.len = 200;
       s.el.style.strokeDasharray = `${s.len} ${s.len + 2}`;
       s.base = clamp(s.len * PEN, .1, .85);
     }
@@ -206,7 +395,7 @@ S.forEach(sc => {
   }
 });
 // Pass 2: lay out time. speed < 1 draws faster; extra = seconds added to every scene's hold.
-function layout(speed, extra) {
+function layoutTime(speed, extra) {
   let cursor = 0;
   S.forEach((sc, k) => {
     sc.start = cursor; cursor += 0.45;
@@ -215,18 +404,30 @@ function layout(speed, extra) {
       s.start = cursor; s.end = cursor + s.dur; cursor = s.end;
     }
     sc.drawEnd = cursor; sc.narrStart = sc.start + 0.3;
-    sc.holdEnd = Math.max(cursor + 0.5 + Math.max(1.2, sc.hold) + extra, sc.narrStart + (NARR[k] || 0) + 0.7);
+    sc.holdEnd = Math.max(cursor + 0.5 + Math.max(0.7, Math.max(1.2, sc.hold) + extra), sc.narrStart + (NARR[k] || 0) + 0.7);
     sc.flipEnd = k < S.length - 1 ? sc.holdEnd + FLIP : sc.holdEnd;
     cursor = sc.flipEnd + 0.1;
   });
   return S[S.length - 1].holdEnd + 0.3;
 }
-let TOTAL = layout(1, 0);
-if (VIDEO.duration) {           // fit the requested length: hold longer, or draw faster (never below 0.35×)
-  const goal = VIDEO.duration, bisect = (f, lo, hi) => { for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (f(m) < goal) lo = m; else hi = m; } return hi; };
-  if (TOTAL < goal) TOTAL = layout(1, bisect(x => layout(1, x), 0, goal));
-  else TOTAL = layout(Math.max(.35, bisect(k => layout(k, 0), .35, 1)), 0);
-  if (Math.abs(TOTAL - goal) > 1) console.warn(`Requested ${goal}s but scenes need ${TOTAL.toFixed(1)}s (narration too long or too many strokes)`);
+let TOTAL = layoutTime(1, 0);
+const WARN = [];                // timing / quality warnings, shown under the preview and exported as window.QA
+const fitTo = (goal, minSpeed, minHoldExtra) => {   // stretch holds, or draw faster / shorten holds down to the limits
+  const bisect = (fn, lo, hi) => { for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (fn(m) < goal) lo = m; else hi = m; } return hi; };
+  if (TOTAL < goal) return layoutTime(1, bisect(x => layoutTime(1, x), 0, goal));
+  let t = layoutTime(Math.max(minSpeed, bisect(k => layoutTime(k, 0), minSpeed, 1)), 0);
+  if (t > goal + .05 && minHoldExtra < 0) t = layoutTime(minSpeed, bisect(x => layoutTime(minSpeed, x), minHoldExtra, 0));
+  return t;
+};
+const D = VIDEO.duration;
+if (Array.isArray(D)) {         // range [min, max]: natural pace; only stretch to min, or tighten gently (≥ 0.75× speed) to reach max
+  const [lo, hi] = D;
+  if (TOTAL < lo) TOTAL = fitTo(lo, 1, 0);
+  else if (TOTAL > hi) TOTAL = fitTo(hi, .75, -0.6);
+  if (TOTAL > hi + 1) WARN.push({ scene: 0, type: 'durasi', msg: `Isi butuh ${TOTAL.toFixed(0)} dtk, lebih dari batas ${hi} dtk: kurangi adegan/poin atau pilih rentang lebih panjang` });
+} else if (D) {                 // exact length (legacy): may draw fast; warns when it has to
+  TOTAL = fitTo(D, .3, -1.5);
+  if (Math.abs(TOTAL - D) > 1) WARN.push({ scene: 0, type: 'durasi', msg: `Diminta ${D} dtk tapi adegan butuh ${TOTAL.toFixed(1)} dtk` });
 }
 
 function pointOn(s, q) {
@@ -310,6 +511,46 @@ function seek(t) {
   placeArm(handPos(t));
   turb.setAttribute('seed', 1 + Math.floor(t * 8) % 4);
 }
+// ---------- quality check: overlaps, safe area, long text, small main drawing, busy scenes ----------
+function stageBox(node) {
+  try {
+    const b = node.getBBox(); if (!(b.width > 0 || b.height > 0)) return null;
+    const M = localToStage(node), pts = [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]].map(([x, y]) => new DOMPoint(x, y).matrixTransform(M));
+    const xs = pts.map(q => q.x), ys = pts.map(q => q.y);
+    return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+  } catch (e) { return null; }
+}
+{
+  const M0 = 40 * U, pad = 8, inside = (a, c) => c.x0 >= a.x0 - pad && c.x1 <= a.x1 + pad && c.y0 >= a.y0 - pad && c.y1 <= a.y1 + pad;
+  S.forEach((sc, k) => {
+    const name = n => n.tagName === 'text' ? `teks "${n.textContent.slice(0, 22)}"` : 'gambar';
+    const boxes = [...sc.content.children].filter(n => !n.classList.contains('acc') && n.dataset.qa !== 'skip')
+      .map(n => ({ n, b: stageBox(n), name: name(n) })).filter(o => o.b);
+    for (const o of boxes) {
+      const b = o.b;
+      if (b.x0 < M0 || b.y0 < M0 || b.x1 > W - M0 || b.y1 > H - M0) WARN.push({ scene: k + 1, type: 'batas', msg: `${o.name} keluar area aman` });
+      if (o.n.dataset.shrink && +o.n.dataset.shrink < .7) WARN.push({ scene: k + 1, type: 'teks', msg: `${o.name} terlalu panjang (diperkecil ${Math.round((1 - o.n.dataset.shrink) * 100)}%)` });
+    }
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i].b, c = boxes[j].b;
+      if (inside(a, c) || inside(c, a)) continue;                        // text inside a bubble/button is intended
+      const ix = Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0), iy = Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0);
+      if (ix > 12 && iy > 12 && ix * iy > .12 * Math.min((a.x1 - a.x0) * (a.y1 - a.y0), (c.x1 - c.x0) * (c.y1 - c.y0)))
+        WARN.push({ scene: k + 1, type: 'tabrakan', msg: `${boxes[i].name} bertabrakan dengan ${boxes[j].name}` });
+    }
+    const drawings = boxes.filter(o => o.n.tagName === 'g');
+    const bigText = boxes.some(o => o.n.tagName === 'text' && +o.n.getAttribute('font-size') >= 180 * U);
+    if (drawings.length && !bigText && Math.max(...drawings.map(o => Math.max((o.b.x1 - o.b.x0) / W, (o.b.y1 - o.b.y0) / H))) < (drawings.length >= 3 ? .18 : .3))
+      WARN.push({ scene: k + 1, type: 'kecil', msg: 'gambar utama terlalu kecil (perbesar sampai ±50% lebar/tinggi layar)' });
+    if (sc.list.length > (NARROW ? 40 : 50)) WARN.push({ scene: k + 1, type: 'ramai', msg: `${sc.list.length} goresan — terlalu ramai, sederhanakan` });
+  });
+  WARN.forEach(w => console.warn(`HandDrawn QA${w.scene ? ' adegan ' + w.scene : ''}: ${w.msg}`));
+}
+window.QA = WARN;
+if (!isFinite(TOTAL)) {   // should never happen; show it instead of a blank page
+  document.querySelector('.frame').insertAdjacentHTML('beforeend', '<p style="color:#b00;font:14px sans-serif;padding:12px">Animation timing could not be computed (TOTAL = ' + TOTAL + ').</p>');
+  throw new Error('HandDrawn: TOTAL is not finite');
+}
 window.seek = seek; window.TOTAL = TOTAL; window.FPS = FPS;
 // Timeline for the audio mixer (scripts/mix.py): when narration starts, when the pen touches paper, when pages flip.
 window.TIMELINE = {
@@ -331,6 +572,11 @@ setPlaying(playing);
 playBtn.addEventListener('click', () => { if (!playing && t >= TOTAL) t = 0; setPlaying(!playing); });
 restartBtn.addEventListener('click', () => { t = 0; setPlaying(true); });
 range.addEventListener('input', () => { t = +range.value; setPlaying(false); });
+if (WARN.length) {   // show quality warnings under the preview (never in the rendered video)
+  const box = document.createElement('div'); box.className = 'qa';
+  box.textContent = 'Periksa: ' + WARN.map(w => `${w.scene ? 'adegan ' + w.scene + ' — ' : ''}${w.msg}`).join(' · ');
+  document.querySelector('.wrap').appendChild(box);
+}
 const lookInputs = { shirt: 'shirtC', pen: 'penC', ink: 'inkC' };
 for (const [k, id] of Object.entries(lookInputs)) {
   const inp = document.getElementById(id); if (LOOK[k]) inp.value = LOOK[k];
