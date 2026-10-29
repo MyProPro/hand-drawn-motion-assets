@@ -1120,7 +1120,11 @@ function pointOn(s, q) {
     const b = s.bb, x = b.x + b.width * q, y = b.y + b.height * .72 + Math.sin(q * b.width / 16) * b.height * .1;
     return toStage(s.M, x, y);
   }
-  const p = s.el.getPointAtLength(s.len * q); return toStage(s.M, p.x, p.y);
+  try { const p = s.el.getPointAtLength(s.len * q); return toStage(s.M, p.x, p.y); }
+  catch (e) {   // hidden frame (e.g. a preview measured before it is shown): use the path's first / last coordinate
+    const n = (s.el.getAttribute('d') || '').match(/-?\d*\.?\d+(?:e-?\d+)?/gi) || ['0', '0'], i = q < .5 ? 0 : Math.max(0, (n.length & ~1) - 2);
+    return toStage(s.M, +n[i] || 0, +n[i + 1] || 0);
+  }
 }
 const lerp = (a, b, u) => ({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
 function handPos(t) {
