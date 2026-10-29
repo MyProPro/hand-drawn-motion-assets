@@ -1,6 +1,6 @@
 /* hand-drawn-motion engine — whiteboard animation (hand, page flip, timing, look).
  * Use: load this file with a script tag, then call HandDrawn.run({ title, video, look, narr, scenes }). See SKILL.md.
- * Hosted copy: https://cdn.jsdelivr.net/gh/MyProPro/hand-drawn-motion-assets@main/engine.js
+ * Hosted copy: https://cdn.jsdelivr.net/gh/MyProPro/hand-drawn-motion-assets@v1.2/engine.js
  */
 (function () {
 const CSS = "\n  /* Layout: one 16:9 paper stage, simple transport bar under it. Single dark-studio look on purpose. */\n  :root {\n    --bg: #1f1d1a; --panel: #2b2824; --line: #4a443c; --fg: #efe9dd; --muted: #a39a8a;\n    --paper: #F7F5EF; --ink: #1E1E1E; --accent: #F2C94C;\n    --ui: ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif;\n    color-scheme: dark;\n  }\n  body {\n    background: var(--bg); color: var(--fg); font-family: var(--ui);\n    padding-left: max(16px, env(safe-area-inset-left, 0px));\n    padding-right: max(16px, env(safe-area-inset-right, 0px));\n    padding-block: 20px;\n  }\n  .wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }\n  .frame { width: 100%; max-width: 100%; aspect-ratio: 16 / 9; background: var(--paper); border-radius: 6px; overflow: hidden; box-shadow: 0 12px 32px rgb(0 0 0 / .35); }\n  svg#stage { display: block; width: 100%; height: 100%; }\n  .bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }\n  button { font: 600 14px var(--ui); color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; cursor: pointer; }\n  button:hover { border-color: var(--muted); }\n  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }\n  input[type=range] { flex: 1; min-width: 140px; accent-color: var(--accent); }\n  .looks { gap: 14px; font-size: 13px; color: var(--muted); }\n  .looks label { display: inline-flex; align-items: center; gap: 6px; }\n  .looks input[type=color] { width: 34px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }\n  .time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; min-width: 96px; text-align: right; }\n  .ink { fill: none; stroke: var(--ink); stroke-linecap: round; stroke-linejoin: round; }\n  .acc { fill: none; stroke: var(--accent); stroke-linecap: round; stroke-linejoin: round; opacity: .85; }\n  .txt { fill: var(--ink); }\n";
@@ -277,11 +277,112 @@ const icon = {
   drop: sd => [A(scrib(0, 40, 80, 80, 6, sd), 22), P('M0,-110 C40,-50 76,-6 76,34 C76,82 40,110 0,110 C-40,110 -76,82 -76,34 C-76,-6 -40,-50 0,-110', 5), P('M-36,30 Q-34,66 -6,80', 4)],
   car: sd => [P('M-160,40 L-160,0 L-110,-10 L-70,-66 L70,-66 L110,-10 L160,0 L160,40 Z', 5), P('M-58,-56 L-80,-12 L80,-12 L58,-56', 3.5),
     P(circ(-88, 46, 30, sd), 5), P(circ(88, 46, 30, sd + 1), 5)],
+  // ---- nature & weather ----
+  moon: sd => [A(scrib(-30, 0, 70, 150, 6, sd), 22), P('M30,-112 C-60,-104 -104,-24 -84,40 C-64,104 20,124 72,92 C8,82 -32,32 -26,-18 C-20,-68 6,-98 30,-112 Z', 5),
+    P('M70,-70 Q74,-56 88,-52 Q74,-48 70,-34 Q66,-48 52,-52 Q66,-56 70,-70', 3.5)],
+  cloud: sd => [A(scrib(0, 10, 200, 80, 8, sd), 22), P(cloud(0, 0, 290, 160, 9, sd + 1), 5)],
+  rain: sd => [P(cloud(0, -50, 270, 140, 9, sd), 5), A(scrib(0, -50, 180, 60, 7, sd + 1), 22),
+    P('M-70,50 L-84,92 M-10,50 L-24,92 M50,50 L36,92 M-40,104 L-54,146 M20,104 L6,146 M80,104 L66,146', 4.5)],
+  snow: sd => [P(cloud(0, -50, 270, 140, 9, sd), 5),
+    ...[[-70, 70], [0, 110], [70, 70], [-40, 140], [40, 140]].map(([x, y]) => P(`M${x - 14},${y} L${x + 14},${y} M${x - 9},${y - 12} L${x + 9},${y + 12} M${x + 9},${y - 12} L${x - 9},${y + 12}`, 3.5))],
+  rainbow: sd => [A('M-105,70 C-105,-75 105,-75 105,70', 22), P('M-145,70 C-145,-125 145,-125 145,70', 5), P('M-105,70 C-105,-75 105,-75 105,70', 4.5),
+    P('M-68,70 C-68,-30 68,-30 68,70', 4.5), P(cloud(-125, 78, 90, 46, 6, sd), 4), P(cloud(125, 78, 90, 46, 6, sd + 1), 4)],
+  wind: () => [P('M-130,-40 L60,-40 C110,-40 112,-104 70,-104 C40,-104 38,-72 54,-62', 5), P('M-140,10 L110,10 C160,10 160,74 118,74 C90,74 88,46 102,38', 5), P('M-120,60 L30,60', 5)],
+  fire: sd => [A('M0,30 C26,50 30,90 0,104 C-30,90 -26,50 0,30 Z', 20),
+    P('M0,-124 C40,-74 92,-32 82,40 C74,100 32,122 0,122 C-32,122 -74,100 -82,40 C-88,-10 -52,-30 -40,-72 C-20,-42 -10,-44 0,-124 Z', 5),
+    P('M0,10 C24,40 34,76 18,98 M0,10 C-24,40 -34,76 -18,98', 3.5)],
+  flower: sd => [A(scrib(0, -50, 60, 60, 5, sd), 22), P(circ(0, -50, 30, sd), 5),
+    ...[0, 60, 120, 180, 240, 300].map((a, i) => P(circ(Math.cos(a * Math.PI / 180) * 60, -50 + Math.sin(a * Math.PI / 180) * 60, 28, sd + i + 1), 4.5)),
+    P('M0,40 C-8,70 8,100 0,130', 5), P('M0,92 C26,64 66,70 78,80 C58,106 22,106 0,92', 4)],
+  mountain: sd => [A(scrib(40, 30, 120, 90, 6, sd), 22), P('M-160,100 L-60,-50 L-14,14 L50,-112 L160,100 Z', 5),
+    P('M30,-74 L50,-112 L70,-74 Q60,-62 50,-72 Q40,-62 30,-74', 4), P('M-160,100 L160,100', 5)],
+  fish: sd => [A(scrib(-10, 0, 150, 60, 7, sd), 22), P('M-110,0 C-60,-72 50,-72 104,0 C50,72 -60,72 -110,0', 5), P('M-110,0 L-162,-52 L-150,0 L-162,52 Z', 5),
+    P(circ(58, -14, 9, sd + 1), 5), P('M26,-38 Q10,0 26,38', 4)],
+  apple: sd => [A(scrib(0, 20, 150, 120, 7, sd), 24), P('M0,-60 C-40,-92 -112,-72 -112,10 C-112,82 -50,122 0,102 C50,122 112,82 112,10 C112,-72 40,-92 0,-60', 5),
+    P('M0,-60 Q4,-92 20,-114', 5), P('M12,-88 C32,-122 72,-112 82,-102 C62,-80 32,-78 12,-88 Z', 4)],
+  // ---- things ----
+  cup: sd => [A(scrib(0, 20, 130, 110, 7, sd), 22), P('M-90,-56 L90,-56 L70,90 L-70,90 Z', 5), P('M86,-26 C140,-26 140,44 76,44', 5),
+    P('M-30,-86 Q-48,-108 -30,-130 M20,-86 Q2,-108 20,-130', 4), P('M-124,110 Q0,130 124,110', 5)],
+  gift: sd => [A(scrib(0, 40, 200, 120, 8, sd), 24), P('M-110,-30 L110,-30 L110,112 L-110,112 Z', 5), P('M-126,-72 L126,-72 L126,-30 L-126,-30 Z', 5),
+    P('M-14,-72 L-14,112 M14,-72 L14,112', 4), P('M0,-72 C-30,-124 -92,-114 -62,-74', 4.5), P('M0,-72 C30,-124 92,-114 62,-74', 4.5)],
+  rocket: sd => [A('M-24,74 Q0,140 24,74', 20), P('M0,-142 C50,-92 62,-12 50,62 L-50,62 C-62,-12 -50,-92 0,-142 Z', 5), P(circ(0, -42, 24, sd), 4.5),
+    P('M-52,18 L-92,92 L-50,72 M52,18 L92,92 L50,72', 5), P('M-26,74 Q0,140 26,74', 4.5)],
+  plane: () => [P('M-150,-10 C-60,-26 90,-26 142,-6 C162,4 142,18 120,20 L-132,20 Z', 5), P('M-20,4 L40,92 L72,92 L42,4', 5),
+    P('M-132,-6 L-152,-72 L-120,-72 L-90,-16', 5), P('M40,-8 L50,-8 M70,-8 L80,-8 M100,-6 L108,-6', 5)],
+  bus: sd => [A(scrib(0, -60, 220, 30, 8, sd), 18), P(R_(300, 170, 22), 5), P('M-150,-10 L150,-10', 4), P('M-80,-85 L-80,-10 M0,-85 L0,-10 M80,-85 L80,-10', 4),
+    P(circ(-82, 92, 28, sd + 1), 5), P(circ(82, 92, 28, sd + 2), 5)],
+  bike: sd => [P(circ(-92, 40, 60, sd), 5), P(circ(92, 40, 60, sd + 1), 5), P('M-92,40 L-20,-40 L60,-40 L92,40 M-20,-40 L10,40 L60,-40 M10,40 L-92,40', 4.5),
+    P('M-38,-58 L-4,-58', 6), P('M60,-40 L50,-82 L82,-88', 5)],
+  globe: sd => [A(scrib(-30, -30, 80, 70, 6, sd), 22), P(circ(0, 0, 112, sd + 1), 5), P(circ(0, 0, 50, sd + 2, 112), 4), P('M-112,0 L112,0', 4),
+    P('M-96,-56 Q0,-40 96,-56 M-96,56 Q0,72 96,56', 3.5)],
+  pin: sd => [A(scrib(0, -40, 110, 110, 7, sd), 24), P('M0,124 C-30,62 -92,12 -92,-40 C-92,-102 -50,-132 0,-132 C50,-132 92,-102 92,-40 C92,12 30,62 0,124 Z', 5),
+    P(circ(0, -40, 32, sd + 1), 4.5)],
+  map: sd => [P('M-150,-90 L-50,-120 L50,-90 L150,-120 L150,90 L50,120 L-50,90 L-150,120 Z', 5), P('M-50,-120 L-50,90 M50,-90 L50,120', 3.5),
+    P('M-110,64 Q-60,4 0,24 Q60,44 96,-46', 3.5), P('M82,-60 L112,-30 M112,-60 L82,-30', 5)],
+  mail: sd => [A(scrib(0, 30, 200, 80, 8, sd), 22), P(R_(280, 180, 16), 5), P('M-140,-88 L0,22 L140,-88', 5)],
+  camera: sd => [P(R_(280, 180, 24), 5), P('M-60,-90 L-40,-122 L40,-122 L60,-90', 5), A(scrib(0, 10, 60, 60, 5, sd), 20),
+    P(circ(0, 10, 58, sd + 1), 5), P(circ(0, 10, 30, sd + 2), 4), P(circ(100, -54, 9, sd + 3), 4)],
+  music: sd => [A('M-46,-86 L94,-116', 20), P(circ(-72, 72, 28, sd + 1, 21), 5), P(circ(68, 42, 28, sd + 2, 21), 5),
+    P('M-46,68 L-46,-100 M94,38 L94,-130', 5), P('M-46,-100 L94,-130 M-46,-70 L94,-100', 8)],
+  cart: sd => [A(scrib(10, 0, 190, 70, 7, sd), 22), P('M-152,-92 L-112,-92 L-82,50 L100,50 L132,-50 L-102,-50', 5),
+    P(circ(-62, 92, 18, sd + 1), 5), P(circ(80, 92, 18, sd + 2), 5)],
+  bag: sd => [A(scrib(0, 50, 170, 110, 7, sd), 22), P('M-100,-40 L100,-40 L122,124 L-122,124 Z', 5), P('M-50,-40 C-50,-112 50,-112 50,-40', 5)],
+  key: sd => [A(scrib(-80, 0, 70, 70, 6, sd), 22), P(circ(-80, 0, 50, sd + 1), 5), P(circ(-80, 0, 16, sd + 2), 4), P('M-30,0 L132,0 M92,0 L92,40 M122,0 L122,30', 6)],
+  shield: sd => [A(scrib(0, 0, 150, 160, 7, sd), 22), P('M0,-132 C40,-102 80,-98 112,-98 C112,20 72,92 0,132 C-72,92 -112,20 -112,-98 C-80,-98 -40,-102 0,-132 Z', 5),
+    P('M-42,0 L-8,34 L52,-38', 7)],
+  flag: sd => [A('M-90,-80 C-40,-104 20,-60 100,-84', 22), P('M-100,-132 L-100,132', 6), P('M-100,-122 C-40,-152 20,-92 112,-122 L112,10 C20,40 -40,-20 -100,10', 5)],
+  document: sd => [P('M-92,-132 L50,-132 L102,-80 L102,132 L-92,132 Z', 5), P('M50,-132 L50,-80 L102,-80', 4.5),
+    A('M-56,-30 L60,-30', 22), P('M-56,-30 L60,-30 M-56,16 L60,16 M-56,62 L20,62', 4)],
+  folder: sd => [A(scrib(0, 30, 220, 100, 8, sd), 22), P('M-142,-82 L-62,-82 L-40,-56 L142,-56 L142,102 L-142,102 Z', 5), P('M-142,-30 L142,-30', 3.5)],
+  pie: sd => [A('M0,0 L0,-104 C60,-104 100,-60 92,52 Z', 26), P(circ(0, 0, 112, sd), 5), P('M0,0 L0,-112 M0,0 L97,56 M0,0 L-90,66', 5)],
+  // ---- people & feelings ----
+  smile: sd => [A(scrib(0, 0, 150, 150, 8, sd), 24), P(circ(0, 0, 112, sd + 1), 5), P(circ(-38, -30, 9, sd + 2), 6), P(circ(38, -30, 9, sd + 3), 6), P('M-56,30 Q0,88 56,30', 5)],
+  people: sd => [A(scrib(0, 60, 160, 60, 7, sd), 20), P(circ(-100, -30, 30, sd), 5), P(circ(100, -30, 30, sd + 1), 5), P(circ(0, -56, 38, sd + 2), 5),
+    P('M-150,100 C-150,20 -50,20 -50,100 M50,100 C50,20 150,20 150,100', 5), P('M-60,120 C-60,0 60,0 60,120', 5)],
+  thumbsUp: sd => [A(scrib(30, 30, 130, 120, 7, sd), 22), P('M-120,-6 L-66,-6 L-66,120 L-120,120 Z', 5),
+    P('M-66,4 C-26,-18 -6,-60 -6,-112 C26,-112 38,-80 28,-30 L102,-30 C132,-30 132,10 112,14 C132,26 126,54 106,58 C122,68 116,96 94,98 C106,112 92,126 72,126 L-66,112', 5)],
+  eye: sd => [P('M-142,0 C-80,-82 80,-82 142,0 C80,82 -80,82 -142,0 Z', 5), A(scrib(0, 0, 60, 60, 5, sd), 20), P(circ(0, 0, 46, sd + 1), 4.5), P(circ(0, 0, 18, sd + 2), 7)],
+  brain: sd => [A(scrib(0, 0, 200, 130, 8, sd), 22), P(cloud(0, 0, 270, 200, 11, sd + 1), 5), P('M0,-94 C-24,-44 24,-4 0,94', 4),
+    P('M-90,-20 Q-60,-40 -40,-10 M40,10 Q60,-20 90,0 M-80,40 Q-50,30 -40,60 M50,50 Q70,30 90,50', 3.5)],
+  // ---- tech, work & school ----
+  robot: sd => [A(scrib(0, 0, 150, 110, 7, sd), 22), P(R_(210, 170, 26), 5), P(circ(-46, -18, 18, sd + 1), 5), P(circ(46, -18, 18, sd + 2), 5),
+    P('M-44,40 L44,40', 6), P('M0,-85 L0,-118', 5), P(circ(0, -130, 12, sd + 3), 5), P('M-105,-24 L-128,-24 L-128,24 L-105,24 M105,-24 L128,-24 L128,24 L105,24', 5)],
+  video: sd => [A(scrib(0, 0, 200, 120, 8, sd), 22), P(R_(280, 190, 30), 5), P('M-32,-52 L52,0 L-32,52 Z', 5.5)],
+  mic: sd => [A(scrib(0, -50, 60, 120, 6, sd), 20), P('M-40,-62 C-40,-142 40,-142 40,-62 L40,10 C40,62 -40,62 -40,10 Z', 5),
+    P('M-72,0 C-72,82 72,82 72,0', 5), P('M0,64 L0,122 M-52,122 L52,122', 5)],
+  headphones: sd => [P('M-100,40 C-100,-142 100,-142 100,40', 6), A('M-112,40 L-80,40 M80,40 L112,40', 30),
+    P('M-122,18 L-70,18 L-70,112 L-122,112 Z', 5), P('M122,18 L70,18 L70,112 L122,112 Z', 5)],
+  school: sd => [A('M-110,-40 L0,-86 L110,-40 L0,4 Z', 22), P('M-152,-40 L0,-102 L152,-40 L0,22 Z', 5), P('M-90,-14 L-90,62 C-60,94 60,94 90,62 L90,-14', 5),
+    P('M152,-40 L152,44', 4), P(circ(152, 54, 10, sd), 4)],
+  pill: () => [G(0, 0, 1, -32, [A('M-110,0 C-110,-56 -50,-56 0,-56 L0,56 C-50,56 -110,56 -110,0 Z', 24), P(R_(260, 112, 56), 5), P('M0,-56 L0,56', 5)])],
+  link: () => [G(-56, 0, 1, -32, [P(R_(170, 86, 43), 6)]), G(56, 0, 1, -32, [P(R_(170, 86, 43), 6)])],
+  brush: sd => [A('M-130,130 C-120,90 -90,70 -66,86 C-50,100 -70,130 -130,130 Z', 22), P('M-130,130 C-120,90 -90,70 -66,86 C-50,100 -70,130 -130,130 Z', 5),
+    P('M-70,84 L-50,64 L-30,84 L-50,104 Z', 5), P('M-50,64 L110,-120 L130,-100 L-30,84', 5)],
   idea: sd => [G(0, 10, 1.9, 0, lightbulb(sd))], heart: sd => [G(0, 30, 2.3, 0, heart(sd))],
   question: sd => [G(0, 0, 2.2, 0, question(sd))], bell: sd => [G(0, 0, 2, 0, bell(sd))],
 };
 // icon by name or ready item list
-const asIcon = (v, sd = 7) => Array.isArray(v) ? v : (icon[v] ? icon[v](sd) : (console.warn('HandDrawn: unknown icon', v), icon.question(sd)));
+// common other names → existing icons, so a guessed name still draws the right thing
+Object.entries({ home: 'house', user: 'person', man: 'person', woman: 'person', search: 'magnifier', email: 'mail', letter: 'mail', envelope: 'mail',
+  timer: 'clock', time: 'clock', lightning: 'bolt', electricity: 'bolt', energy: 'bolt', message: 'chat', comment: 'chat', speech: 'chat',
+  play: 'video', youtube: 'video', ai: 'robot', bot: 'robot', location: 'pin', place: 'pin', food: 'apple', fruit: 'apple', coffee: 'cup', tea: 'cup',
+  drink: 'cup', shop: 'cart', shopping: 'cart', basket: 'cart', like: 'thumbsUp', ok: 'thumbsUp', team: 'people', family: 'people', group: 'people',
+  file: 'document', paper: 'document', note: 'document', education: 'school', graduation: 'school', medicine: 'pill', health: 'pill',
+  water: 'drop', plant: 'leaf', nature: 'tree', world: 'globe', earth: 'globe', security: 'shield', safe: 'shield', password: 'lock',
+  settings: 'gear', money2: 'coins', cash: 'money', growth: 'chartUp', chart: 'bars', goal: 'target', win: 'trophy', award: 'trophy',
+  announce: 'megaphone', light: 'bulb', lamp: 'bulb', love: 'heart', happy: 'smile', smiley: 'smile', notification: 'bell', alert: 'warning',
+  write: 'pencil', edit: 'pencil', storm: 'rain', weather: 'cloud', night: 'moon', star2: 'star', paint: 'brush', art: 'brush',
+  sound: 'music', song: 'music', photo: 'camera', picture: 'camera', travel: 'plane', airplane: 'plane', car2: 'car', bicycle: 'bike',
+  gifts: 'gift', present: 'gift', launch: 'rocket', startup: 'rocket', hot: 'fire', flame: 'fire', idea2: 'idea', see: 'eye', view: 'eye',
+  think: 'brain', mind: 'brain', smart: 'brain', microphone: 'mic', podcast: 'mic', audio: 'headphones', listen: 'headphones',
+  connect: 'link', chain: 'link', key2: 'key', unlock: 'key', finish: 'flag', start: 'flag',
+}).forEach(([a, b]) => { if (!icon[a] && icon[b]) icon[a] = icon[b]; });
+// a name that does not exist never crashes: it draws a question mark and the preview lists the name, so it can be fixed
+const MISSING_ICONS = new Set();
+const iconLib = icon;
+const iconProxy = new Proxy(iconLib, { get: (o, k) => (typeof k !== 'string' || k in o) ? o[k]
+  : (sd => { MISSING_ICONS.add(k); console.warn('HandDrawn: unknown icon', k); return o.question(sd); }) });
+const asIcon = (v, sd = 7) => Array.isArray(v) ? v : (iconLib[v] ? iconLib[v](sd) : (MISSING_ICONS.add(v), console.warn('HandDrawn: unknown icon', v), iconLib.question(sd)));
 
 // ---------- scene layouts (return a full scene; sizes adapt to 16:9, 9:16 and 1:1) ----------
 const BIG = TALL ? 1.9 * U : NARROW ? 1.55 * U : 1.45 * U;      // main drawing scale
@@ -574,7 +675,7 @@ const chars = (() => {
 })();
 
 const SCENES = (cfg.scenes({ W, H, CX, CY, U, TALL, NARROW, P, A, T, G, arrow, circ, cloud, scrib, smooth, rng,
-  heart, question, spark, curly, lightbulb, button, bell, roundRect, icon, layout, at, crayon, paint, grass, act, gone, journey, speaks, mirror, chars }) || [])
+  heart, question, spark, curly, lightbulb, button, bell, roundRect, icon: iconProxy, layout, at, crayon, paint, grass, act, gone, journey, speaks, mirror, chars }) || [])
   .filter(Boolean).map(sc => Array.isArray(sc) ? { items: sc } : sc);   // tolerate stray commas / undefined scenes
 { const clean = it => { it.items = (it.items || []).filter(Boolean); it.items.forEach(x => x.t === 'g' && clean(x)); }; SCENES.forEach(clean); }
 
@@ -1032,6 +1133,7 @@ function layoutTime(speed, extra) {
 }
 let TOTAL = layoutTime(1, 0);
 const WARN = [];                // timing / quality warnings, shown under the preview and exported as window.QA
+if (MISSING_ICONS.size) WARN.push({ scene: 0, type: 'icon', msg: `ikon tidak ada: ${[...MISSING_ICONS].join(', ')} — digambar sebagai tanda tanya; ganti dengan ikon yang ada atau gambar doodle sendiri` });
 const fitTo = (goal, minSpeed, minHoldExtra) => {   // stretch holds, or draw faster / shorten holds down to the limits
   const bisect = (fn, lo, hi) => { for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (fn(m) < goal) lo = m; else hi = m; } return hi; };
   if (TOTAL < goal) return layoutTime(1, bisect(x => layoutTime(1, x), 0, goal));
