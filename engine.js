@@ -15,10 +15,12 @@ if (!document.querySelector('link[data-hd-fonts]')) { const l = document.createE
 document.body.insertAdjacentHTML('afterbegin', MARKUP.replace('Animasi whiteboard', (cfg.title || 'Animasi whiteboard').replace(/"/g, '')));
 const NS = 'http://www.w3.org/2000/svg';
 // ---------- video settings (filled from the intake: ratio and target length) ----------
-const VIDEO = Object.assign({ ratio: '16:9', duration: null }, cfg.video);   // ratio '16:9' | '9:16' | '1:1'; duration in seconds (null = natural pace)
+const VIDEO = Object.assign({ ratio: '16:9', duration: null }, cfg.video);
+// look.style: 'whiteboard' (default) or 'sand' (sand art on a lightbox: finger carves light into dark sand, palm sweeps between scenes)
+const SAND = ((cfg.look && cfg.look.style) || cfg.style) === 'sand';   // ratio '16:9' | '9:16' | '1:1'; duration in seconds (null = natural pace)
 const SIZES = { '16:9': [1920, 1080], '9:16': [1080, 1920], '1:1': [1080, 1080] };
 const [W, H] = SIZES[VIDEO.ratio] || SIZES['16:9'];
-const FPS = 30, PEN = 0.0009, AS = VIDEO.ratio === '16:9' ? 1 : 0.85;   // AS = arm scale
+const FPS = 30, PEN = 0.0009, AS = (VIDEO.ratio === '16:9' ? 1 : 0.85) * (SAND ? 0.8 : 1);   // AS = arm scale
 const OFF = { x: W + 90, y: H + 80 };
 // Narration length per scene in seconds; filled in by scripts/build.py --audio. Scenes last at least this long.
 const NARR = cfg.narr || [];
@@ -37,6 +39,51 @@ for (const [id, file] of [['armBaseImg', 'arm_base.webp'], ['sleeveLayer', 'arm_
 const flipfx = document.getElementById('flipfx'), flap = document.getElementById('flap'), flapShadow = document.getElementById('flapShadow');
 const armUpper = document.getElementById('armUpper'), torso = document.getElementById('torso');
 const hand = document.getElementById('hand'), turb = document.getElementById('turb'), defs = document.getElementById('defs');
+const HAND_POINT = 'ARM_HAND';   // pointing-hand photo for the sand style; embedded by scripts/build.py, else loaded from ARM_URL
+if (SAND) {   // lightbox + sand instead of paper, finger photo instead of the pen arm, sweep instead of page flip
+  defs.insertAdjacentHTML('beforeend', `
+  <radialGradient id="sandLight" cx="50%" cy="46%" r="72%"><stop offset="0" stop-color="#ffe4a6"/><stop offset=".45" stop-color="#f1b058"/><stop offset="1" stop-color="#6e360e"/></radialGradient>
+  <filter id="sandGrain" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="3" result="g"/>
+    <feTurbulence type="fractalNoise" baseFrequency="0.0035" numOctaves="2" seed="8" result="p"/>
+    <feComposite in="g" in2="p" operator="arithmetic" k2="0.55" k3="0.4" result="n"/>
+    <feColorMatrix in="n" type="matrix" values="0 0 0 0 0.16  0 0 0 0 0.095  0 0 0 0 0.035  0 0 0 -1.4 1.6"/>
+  </filter>
+  <filter id="sandCarve" filterUnits="userSpaceOnUse" x="-100" y="-100" width="${W + 200}" height="${H + 200}" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="5" result="t"/>
+    <feDisplacementMap in="SourceAlpha" in2="t" scale="10" xChannelSelector="R" yChannelSelector="G" result="a"/>
+    <feGaussianBlur in="a" stdDeviation="1.3" result="ab"/>
+    <feMorphology in="ab" operator="dilate" radius="7" result="dil"/>
+    <feGaussianBlur in="dil" stdDeviation="6" result="rimA"/>
+    <feFlood flood-color="#0d0602" flood-opacity=".6"/><feComposite in2="rimA" operator="in" result="rim"/>
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" seed="9" result="gr"/>
+    <feColorMatrix in="gr" type="matrix" values="0 0 0 0 1  0 0 0 0 .88  0 0 0 0 .6  0 0 0 -.8 1.3" result="litc"/>
+    <feComposite in="litc" in2="ab" operator="in" result="lit"/>
+    <feMerge><feMergeNode in="rim"/><feMergeNode in="lit"/></feMerge>
+  </filter>
+  <filter id="sandGlow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="70"/></filter>
+  <filter id="sandPileBlur" x="-60%" y="-10%" width="220%" height="120%"><feGaussianBlur stdDeviation="28"/></filter>
+  <filter id="sandDust" x="0" y="0" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency="1.3" numOctaves="1" seed="11"/>
+    <feColorMatrix type="matrix" values="0 0 0 0 0.12  0 0 0 0 0.07  0 0 0 0 0.03  0 0 0 11 -6.6"/>
+  </filter>
+  <filter id="handShade" x="-20%" y="-20%" width="150%" height="150%" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="0.86 0 0 0 0.02  0 0.8 0 0 0.01  0 0 0.72 0 0  0 0 0 1 0" result="lit"/>
+    <feDropShadow in="lit" dx="40" dy="55" stdDeviation="26" flood-color="#0b0502" flood-opacity="0.55"/>
+  </filter>`);
+  const rects = stage.querySelectorAll(':scope > rect');
+  rects[0].setAttribute('fill', 'url(#sandLight)');
+  rects[0].insertAdjacentHTML('afterend', `<rect width="${W}" height="${H}" filter="url(#sandGrain)"/>`);
+  rects[rects.length - 1].setAttribute('filter', 'url(#sandDust)');
+  flap.style.display = flapShadow.style.display = 'none';
+  flipfx.insertAdjacentHTML('beforeend', '<polygon id="sandPile" fill="#2b190b" opacity=".85" filter="url(#sandPileBlur)"/>');
+  document.querySelector('.frame').style.background = '#2a1a0c';
+  document.querySelector('.looks').style.display = 'none';
+  hand.setAttribute('filter', 'url(#handShade)'); document.getElementById('arm').setAttribute('filter', 'url(#handShade)');
+  hand.firstElementChild.setAttribute('transform', 'translate(-116 -120)');
+  document.getElementById('armBaseImg').setAttribute('href', HAND_POINT.length > 100 ? 'data:image/webp;base64,' + HAND_POINT : `${ARM_URL}/hand_point.webp`);
+  { const st = document.createElement('style'); st.textContent = '.acc{opacity:0}'; document.head.appendChild(st); }   // no highlighter in sand: the glow behind the picture does that job
+}
 const ease = x => x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
 const c01 = x => Math.min(1, Math.max(0, x));
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
@@ -212,7 +259,7 @@ const titleT = (s, y = TY, seq = 0) => T(s, CX, y, TS, 'title', seq, W - 180 * U
 const capT = (s, seq = 2) => s ? [T(s, CX, CAP, TALL ? 66 * U : 60 * U, 'body', seq, W - 200 * U)] : [];
 const layout = {
   // Hook: big question + one strong picture. { title, sub, icon, cap, side: icon for a small extra (optional) }
-  hook: ({ title, sub = '', icon: ic = 'question', cap = '', side = null, hold = 2.2 }) => ({ hold, items: [
+  hook: ({ title, sub = '', icon: ic = 'question', cap = '', side = null, hold = 2.2 }) => ({ kind: 'hook', hold, items: [
     titleT(title, sub ? TY : TY + 40 * U, 0),
     ...(sub ? [T(sub, CX, TY + (TALL ? 125 : 105) * U, (TALL ? 100 : 84) * U, 'body', 0.1, W - 200 * U),
       A(`M${CX - 240 * U},${TY + (TALL ? 105 : 88) * U} Q${CX},${TY + (TALL ? 92 : 76) * U} ${CX + 240 * U},${TY + (TALL ? 110 : 92) * U}`, 30, 0.2)] : []),
@@ -250,9 +297,9 @@ const layout = {
     const s = TALL ? BIG * .5 : BIG * (NARROW ? .5 : .62);
     const span = TALL ? (CAP - TY - 560 * U) / Math.max(1, n - 1) : Math.min(560 * U, (W - 420 * U) / Math.max(1, n - 1));
     steps.forEach((st, i) => {
-      const x = TALL ? CX - 170 * U : CX + (i - (n - 1) / 2) * span, y = TALL ? TY + 230 * U + i * span : CY - 40 * U;
+      const x = TALL ? CX - 230 * U : CX + (i - (n - 1) / 2) * span, y = TALL ? TY + 230 * U + i * span : CY - 40 * U;
       items.push(G(x, y, s, 0, asIcon(st.icon, 41 + i), 0.5 + i));
-      items.push(T(st.label, TALL ? CX + 150 * U : x, TALL ? y + 22 * U : y + 225 * s + 50 * U, (TALL ? 64 : 52) * U, 'title', 0.6 + i, TALL ? W * .42 : span * .92));
+      items.push(T(st.label, TALL ? CX + 165 * U : x, TALL ? y + 22 * U : y + 225 * s + 50 * U, (TALL ? 64 : 52) * U, 'title', 0.6 + i, TALL ? W * .38 : span * .92));
       if (i < n - 1) items.push(...(TALL ? arrow(x, y + 160 * s + 20 * U, x, y + span - 160 * s - 20 * U, 30 * U)
         : arrow(x + 165 * s + 20 * U, y, x + span - 165 * s - 20 * U, y, -30 * U)).map(a => ({ ...a, seq: 0.8 + i })));
     });
@@ -267,7 +314,7 @@ const layout = {
     ...(label ? [T(label, CX, CY + (ic ? 270 : 170) * U, (TALL ? 80 : 64) * U, 'body', 0.8, W - 220 * U)] : []),
     ...capT(cap)] }),
   // CTA: question/title + marker button + fitting doodle + arrow. icon: 'bell' | 'heart' | 'chat' | any icon
-  cta: ({ title, title2 = '', action = 'FOLLOW', sub = '', icon: ic = 'bell', hold = 3 }) => ({ hold, items: [
+  cta: ({ title, title2 = '', action = 'FOLLOW', sub = '', icon: ic = 'bell', hold = 3 }) => ({ kind: 'cta', hold, items: [
     titleT(title, TY, 0), ...(title2 ? [titleT(title2, TY + TS * 1.5, 0.1)] : []),
     G(CX, CY + (TALL ? 40 : 60) * U, (TALL ? 1.1 : 1) * U, 0, button(620, 170, 61), 0.5),
     T(action, CX, CY + (TALL ? 72 : 92) * U, 96 * U, 'title', 0.6, 540 * U),
@@ -280,10 +327,13 @@ const layout = {
 // null keeps the photo's own colour (black sweater, black pen). Any '#rrggbb' recolours it with texture kept.
 // ink = colour of everything drawn and written (whiteboard style: keep it dark).
 const LOOK = Object.assign({ shirt: null, pen: null, ink: '#1E1E1E' }, cfg.look);
+if (SAND) LOOK.shirt = LOOK.pen = null;   // the sand hand keeps its own black sleeve
 
 // ---------- scenes (written by the page) ----------
-const SCENES = cfg.scenes({ W, H, CX, CY, U, TALL, NARROW, P, A, T, G, arrow, circ, cloud, scrib, smooth, rng,
-  heart, question, spark, curly, lightbulb, button, bell, roundRect, icon, layout });
+const SCENES = (cfg.scenes({ W, H, CX, CY, U, TALL, NARROW, P, A, T, G, arrow, circ, cloud, scrib, smooth, rng,
+  heart, question, spark, curly, lightbulb, button, bell, roundRect, icon, layout }) || [])
+  .filter(Boolean).map(sc => Array.isArray(sc) ? { items: sc } : sc);   // tolerate stray commas / undefined scenes
+{ const clean = it => { it.items = (it.items || []).filter(Boolean); it.items.forEach(x => x.t === 'g' && clean(x)); }; SCENES.forEach(clean); }
 
 // ---------- render ----------
 function el(tag, attrs) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
@@ -300,84 +350,46 @@ function render(items, parent, scale, list, inh) {
     }
     if (it.t === 't') {
       const title = it.font === 'title';
-      const family = title ? "'Permanent Marker', 'Comic Sans MS', cursive" : "'Caveat', 'Segoe Print', cursive";
-      const weight = title ? 400 : 700;
-      const room = Math.max(40, Math.min(it.maxW || Infinity, (W - 160 * U) / scale));
-      const requestedSize = Math.max(12, +it.size || 12);
-      const probe = el('text', { x: 0, y: 0, 'font-size': requestedSize, 'font-family': family, 'font-weight': weight });
-      probe.style.visibility = 'hidden';
-      probe.textContent = 'M';
-      parent.appendChild(probe);
-      const measure = value => { probe.textContent = value; return probe.getComputedTextLength(); };
-      const wrapLine = raw => {
-        const words = String(raw).trim().split(/\s+/).filter(Boolean);
-        if (!words.length) return [''];
-        const result = [];
-        let line = '';
-        for (const word of words) {
-          const candidate = line ? `${line} ${word}` : word;
-          if (measure(candidate) <= room) { line = candidate; continue; }
-          if (line) result.push(line);
-          // Keep even unusually long words (URLs, IDs, unbroken strings) inside the frame.
-          if (measure(word) > room) {
-            let piece = '';
-            for (const ch of Array.from(word)) {
-              if (piece && measure(piece + ch) > room) { result.push(piece); piece = ch; }
-              else piece += ch;
-            }
-            line = piece;
-          } else line = word;
-        }
-        if (line) result.push(line);
-        return result.length ? result : [''];
-      };
-      let lines = String(it.s ?? '').split(/\r?\n/).flatMap(wrapLine);
-      // A small safety margin prevents font metric differences between preview and export.
-      while (lines.some(line => measure(line) > room) && requestedSize > 12) {
-        probe.setAttribute('font-size', Math.max(12, +probe.getAttribute('font-size') * .94));
+      const t = el('text', { x: it.x, y: it.y, 'font-size': it.size, 'text-anchor': 'middle', class: 'txt',
+        'font-family': title ? "'Permanent Marker', 'Comic Sans MS', cursive" : "'Caveat', 'Segoe Print', cursive",
+        'font-weight': title ? 400 : 700 });
+      t.textContent = it.s; parent.appendChild(t);
+      if (it.qa) t.dataset.qa = it.qa;
+      const room = Math.min(it.maxW || Infinity, (W - 160 * U) / scale), wNow = t.getComputedTextLength();   // never wider than the screen
+      const words = it.s.split(' ');
+      if (wNow > room * 1.35 && words.length > 2 && !it.oneLine) {   // much too long: break into two balanced lines
+        let best = 1, bestD = Infinity;
+        for (let i = 1; i < words.length; i++) { const d = Math.abs(words.slice(0, i).join(' ').length - words.slice(i).join(' ').length); if (d < bestD) { bestD = d; best = i; } }
+        const lh = it.size * 1.25, lines = [words.slice(0, best).join(' '), words.slice(best).join(' ')];
+        // titles sit at the top with a subtitle under them: grow upward so nothing below gets covered
+        const y0 = title ? Math.max(it.y - lh, (56 * U + it.size * .8) / scale) : it.y;   // body text grows downward
+        t.remove();
+        lines.forEach((line, li) => {
+          const tl = el('text', { x: it.x, y: y0 + li * lh, 'font-size': it.size, 'text-anchor': 'middle', class: 'txt',
+            'font-family': title ? "'Permanent Marker', 'Comic Sans MS', cursive" : "'Caveat', 'Segoe Print', cursive", 'font-weight': title ? 400 : 700 });
+          tl.textContent = line; tl.dataset.wrap = String(it.ord); parent.appendChild(tl);
+          const wl = tl.getComputedTextLength();
+          if (wl > room) { tl.setAttribute('font-size', (it.size * room / wl).toFixed(1)); tl.dataset.shrink = (room / wl).toFixed(2); }
+          list.push({ el: tl, kind: 't', seq: (it.seq ?? inh ?? 2) + li * .01, ord: it.ord + li * .5 });
+        });
+        continue;
       }
-      let fontSize = +probe.getAttribute('font-size') || requestedSize;
-      // Fit the entire multiline block vertically before creating the animated text strokes.
-      const safeTop = 48 * U / scale, safeBottom = (H - 48 * U) / scale;
-      let lineHeight = fontSize * 1.18;
-      const blockHeight = Math.max(1, lines.length) * lineHeight;
-      if (blockHeight > safeBottom - safeTop) {
-        fontSize *= (safeBottom - safeTop) / blockHeight;
-        lineHeight = fontSize * 1.18;
-      }
-      let firstY = it.y - ((lines.length - 1) * lineHeight) / 2;
-      if (firstY - fontSize * .82 < safeTop) firstY = safeTop + fontSize * .82;
-      if (firstY + (lines.length - 1) * lineHeight + fontSize * .22 > safeBottom) {
-        firstY = safeBottom - fontSize * .22 - (lines.length - 1) * lineHeight;
-      }
-      probe.remove();
-      lines.forEach((line, li) => {
-        const tl = el('text', { x: it.x, y: firstY + li * lineHeight, 'font-size': fontSize,
-          'text-anchor': 'middle', class: 'txt', 'font-family': family, 'font-weight': weight });
-        tl.textContent = line;
-        parent.appendChild(tl);
-        if (it.qa) tl.dataset.qa = it.qa;
-        const measured = tl.getComputedTextLength();
-        if (measured > room) {
-          const fitted = Math.max(12, fontSize * room / measured * .97);
-          tl.setAttribute('font-size', fitted.toFixed(1));
-          tl.dataset.shrink = (fitted / requestedSize).toFixed(2);
-        } else if (fontSize < requestedSize) {
-          tl.dataset.shrink = (fontSize / requestedSize).toFixed(2);
-        }
-        list.push({ el: tl, kind: 't', seq: (it.seq ?? inh ?? 2) + li * .01, ord: it.ord + li * .5 });
-      });
-      continue;
+      if (wNow > room) { t.setAttribute('font-size', (it.size * room / wNow).toFixed(1)); t.dataset.shrink = (room / wNow).toFixed(2); }
+      list.push({ el: t, kind: 't', seq: it.seq ?? inh ?? 2, ord: it.ord }); continue;
     }
-    const p = el('path', { d: it.d, class: it.t === 'a' ? 'acc' : 'ink', 'stroke-width': (it.w / scale).toFixed(2) });
+    const p = el('path', { d: it.d, class: it.t === 'a' ? 'acc' : 'ink', 'stroke-width': (it.w * (SAND ? (it.t === 'a' ? 3 : 2.3) : 1) / scale).toFixed(2) });   // sand: a fingertip makes wide lines
     if (it.qa) p.dataset.qa = it.qa;
     parent.appendChild(p);
     list.push({ el: p, kind: it.t, seq: it.seq ?? inh ?? (it.t === 'a' ? 1 : 0), ord: it.ord });
   }
 }
 
+// Measure text only after the handwriting fonts are really in (late fonts make text wider than measured).
+const fontsReady = () => document.fonts.check('80px "Permanent Marker"') && document.fonts.check('700 80px "Caveat"');
 const loadFonts = Promise.all([document.fonts.load('80px "Permanent Marker"'), document.fonts.load('700 80px "Caveat"')]).catch(() => {});
-await Promise.race([loadFonts, new Promise(r => setTimeout(r, 3000))]);
+await Promise.race([loadFonts, new Promise(r => setTimeout(r, 8000))]);
+for (let i = 0; i < 40 && !fontsReady(); i++) await new Promise(r => setTimeout(r, 100));
+await (document.fonts.ready || Promise.resolve());
 // Some preview frames start hidden; give them a moment to get a size before measuring text.
 for (let i = 0; i < 40 && !(stage.getBoundingClientRect().width > 0); i++) await new Promise(r => setTimeout(r, 100));
 
@@ -387,12 +399,14 @@ const S = SCENES.map((sc, k) => {
   const page = el('g', { class: 'page', 'clip-path': `url(#page${k})` });
   const cp = el('clipPath', { id: `page${k}` }), poly = el('polygon', { points: fullRect });
   cp.appendChild(poly); defs.appendChild(cp);
-  page.appendChild(el('rect', { width: W, height: H, fill: '#F7F5EF' }));
-  const g = el('g', { filter: 'url(#wobble)' }); page.appendChild(g);
+  if (!SAND) page.appendChild(el('rect', { width: W, height: H, fill: '#F7F5EF' }));
+  const glow = SAND ? el('ellipse', { cx: CX, cy: CY, rx: 300, ry: 220, fill: '#ffcf7e', opacity: 0, filter: 'url(#sandGlow)' }) : null;   // thinner sand behind the picture
+  if (glow) page.appendChild(glow);
+  const g = el('g', { filter: SAND ? 'url(#sandCarve)' : 'url(#wobble)' }); page.appendChild(g);
   pagesLayer.insertBefore(page, pagesLayer.firstChild);
   number(sc.items); const list = []; render(sc.items, g, 1, list);
   list.sort((a, b) => a.seq - b.seq || a.ord - b.ord);
-  return { page, poly, list, hold: sc.hold, content: g };
+  return { page, poly, list, hold: sc.hold, content: g, glow };
 });
 
 // ---------- automatic layout fixer (runs before timing, so the hand follows the fixed positions) ----------
@@ -402,7 +416,10 @@ const FIXED = [];
 if (VIDEO.autofix !== false) S.forEach((sc, k) => {
   const M = 56 * U, gap = 18 * U;
   const nodes = [...sc.content.children].filter(n => !n.classList.contains('acc') && n.dataset.qa !== 'skip');
-  const box = n => stageBox(n);
+  const wrapGroup = id => [...sc.content.children].filter(m => m.dataset.wrap === id);
+  const box = n => { if (!n.dataset.wrap) return stageBox(n);   // a wrapped text counts as one block
+    const bs = wrapGroup(n.dataset.wrap).map(stageBox).filter(Boolean); if (!bs.length) return null;
+    return { x0: Math.min(...bs.map(b => b.x0)), y0: Math.min(...bs.map(b => b.y0)), x1: Math.max(...bs.map(b => b.x1)), y1: Math.max(...bs.map(b => b.y1)) }; };
   const area = b => (b.x1 - b.x0) * (b.y1 - b.y0);
   const inside = (a, c, pad = 8) => c.x0 >= a.x0 - pad && c.x1 <= a.x1 + pad && c.y0 >= a.y0 - pad && c.y1 <= a.y1 + pad;
   const hit = (a, c) => { const ix = Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0), iy = Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0);
@@ -447,6 +464,9 @@ if (VIDEO.autofix !== false) S.forEach((sc, k) => {
   for (const a of [...sc.content.children].filter(n => n.dataset.qa === 'skip' && !n.classList.contains('acc'))) {
     const ab = box(a); const d = ab && nearest(ab, 160 * U); if (d) (attached.get(d) || attached.set(d, []).get(d)).push(a); }
   const baseMove = move;
+  // the second line of a wrapped text travels with the first
+  for (const n of nodes) if (n.dataset.wrap && !attachedTo.has(n)) for (const m of nodes) if (m !== n && m.dataset.wrap === n.dataset.wrap && !attachedTo.has(m)) {
+    (attached.get(n) || attached.set(n, []).get(n)).push(m); attachedTo.add(m); }
   const moveAll = (n, dx, dy) => { baseMove(n, dx, dy); for (const c of attached.get(n) || []) baseMove(c, dx, dy); };
   // 2) keep everything inside the safe area
   for (const n of nodes) if (!attachedTo.has(n)) { const b0 = box(n); if (fitBounds(n)) { const b1 = box(n);
@@ -460,7 +480,7 @@ if (VIDEO.autofix !== false) S.forEach((sc, k) => {
   for (const o of order) {
     for (let tries = 0; tries < 4; tries++) {
       o.b = box(o.n);
-      const clash = placed.filter(p => hit(p.b, o.b) && !container(o, [p]) && !container(p, [o]));
+      const clash = placed.filter(p => hit(p.b, o.b) && !container(o, [p]) && !container(p, [o]) && !(o.n.dataset.wrap && o.n.dataset.wrap === p.n.dataset.wrap));
       if (!clash.length) break;
       const cands = [];
       for (const p of clash) {
@@ -499,6 +519,12 @@ function reflect(p, f) {
 const RECT = [{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: H }, { x: 0, y: H }];
 const pts = a => a.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') || '0,0';
 const GRAB = { x: W - 40, y: H - 30 };          // where the hand pinches the page corner
+// sand: the palm pushes the sand back from right to left; the old picture stays only left of a rough edge
+const sweepX = u => W + 120 - (W + 240) * ease(u);
+const edgeAt = (x, y) => x + 22 * Math.sin(y * .011 + 1.7) + 9 * Math.sin(y * .043);
+const sweepPoly = x => { const a = [{ x: 0, y: 0 }]; for (let y = 0; y <= H; y += 30) a.push({ x: edgeAt(x, y), y }); a.push({ x: 0, y: H }); return a; };
+const pilePoly = x => { const a = []; for (let y = -40; y <= H + 40; y += 30) a.push({ x: edgeAt(x, y) - 90, y }); for (let y = H + 40; y >= -40; y -= 30) a.push({ x: edgeAt(x, y) + 70, y }); return a; };
+const SWEEP0 = { x: W + 160, y: H * .55 };
 const grabAt = u => { const f = foldAt(u); return GRAB.x > xLine(f, GRAB.y) ? reflect(GRAB, f) : GRAB; };
 let RELEASE = 1; for (let u = 0; u <= 1; u += 0.01) if (grabAt(u).x < 320) { RELEASE = u; break; }
 
@@ -514,6 +540,14 @@ function localToStage(el) {
   }
   return m;
 }
+if (SAND) S.forEach(sc => {   // place each scene's glow behind its drawing (after the layout fixer moved things)
+  let b = null; try { b = sc.content.getBBox(); } catch (e) {}
+  if (!b || !(b.width > 0)) return;
+  const ink = [...sc.content.children].filter(n => n.tagName === 'g').map(stageBox).filter(Boolean);
+  const bx = ink.length ? { x0: Math.min(...ink.map(q => q.x0)), y0: Math.min(...ink.map(q => q.y0)), x1: Math.max(...ink.map(q => q.x1)), y1: Math.max(...ink.map(q => q.y1)) } : { x0: b.x, y0: b.y, x1: b.x + b.width, y1: b.y + b.height };
+  sc.glow.setAttribute('cx', (bx.x0 + bx.x1) / 2); sc.glow.setAttribute('cy', (bx.y0 + bx.y1) / 2);
+  sc.glow.setAttribute('rx', Math.max(260 * U, (bx.x1 - bx.x0) * .6)); sc.glow.setAttribute('ry', Math.max(200 * U, (bx.y1 - bx.y0) * .7));
+});
 // Pass 1: measure every stroke once.
 S.forEach(sc => {
   let prev = null;
@@ -586,9 +620,10 @@ function handPos(t) {
   const sc = S[k], L = sc.list, first = L[0], last = L[L.length - 1];
   if (t > sc.holdEnd) {                                   // flipping the page by its corner
     const u = (t - sc.holdEnd) / FLIP;
+    if (SAND) return { x: sweepX(u) + 40 * AS, y: H * (.55 + .18 * Math.sin(u * Math.PI * 2.5)) };
     return u <= RELEASE ? grabAt(u) : lerp(grabAt(RELEASE), OFF, ease((u - RELEASE) / (1 - RELEASE)));
   }
-  if (k < S.length - 1 && t > sc.holdEnd - .5) return lerp(OFF, GRAB, ease((t - (sc.holdEnd - .5)) / .5));
+  if (k < S.length - 1 && t > sc.holdEnd - .5) return lerp(OFF, SAND ? SWEEP0 : GRAB, ease((t - (sc.holdEnd - .5)) / .5));
   if (t < first.start) return lerp(OFF, first.p0, ease(c01((t - (first.start - .4)) / .4)));
   if (t > last.end) return lerp(last.p1, OFF, ease(c01((t - last.end) / .5)));
   for (let i = 0; i < L.length; i++) {
@@ -601,7 +636,8 @@ function handPos(t) {
 
 // ---------- arm & body (photo forearm rotating at the pen tip, upper arm + torso drawn behind) ----------
 // Measured on assets/arm_*.webp (1254×1254): pen tip (81,206), sleeve exits the photo at (1219,1099).
-const TIP_IMG = { x: 81, y: 206 }, ELBOW = { x: 1138, y: 893 }, SLEEVE_DIR = { x: 0.765, y: 0.644 };
+const TIP_IMG = SAND ? { x: 116, y: 120 } : { x: 81, y: 206 }, ELBOW = SAND ? { x: 1080, y: 1010 } : { x: 1138, y: 893 },
+  SLEEVE_DIR = SAND ? { x: 0.76, y: 0.65 } : { x: 0.765, y: 0.644 };
 const ELBOW_BASE = Math.atan2(ELBOW.y, ELBOW.x);
 const SHOULDER = { x: W + 680, y: H + 720 }, UPPER = 420 * AS;            // shoulder rests off-frame; leans in when reaching far
 const SLEEVE_L = { lo: 0.0129, mean: 0.0899 }, PEN_L = { lo: 0.0526, mean: 0.1544 };
@@ -640,13 +676,17 @@ function seek(t) {
     const prevFlipStart = k > 0 ? S[k - 1].holdEnd : -1;
     sc.page.style.display = (t >= prevFlipStart && (t <= sc.flipEnd || k === S.length - 1)) ? '' : 'none';
     if (k < S.length - 1 && t > sc.holdEnd && t <= sc.flipEnd) {
+      if (SAND) { const x = sweepX((t - sc.holdEnd) / FLIP); sc.poly.setAttribute('points', pts(sweepPoly(x)));
+        document.getElementById('sandPile').setAttribute('points', pts(pilePoly(x))); flipfx.style.display = ''; }
+      else {
       const f = foldAt((t - sc.holdEnd) / FLIP), flapPts = pts(cut(RECT, f, false).map(p => reflect(p, f)));
       sc.poly.setAttribute('points', pts(cut(RECT, f, true)));
-      flap.setAttribute('points', flapPts); flapShadow.setAttribute('points', flapPts); flipfx.style.display = '';
+      flap.setAttribute('points', flapPts); flapShadow.setAttribute('points', flapPts); flipfx.style.display = ''; }
     } else sc.poly.setAttribute('points', fullRect);
+    if (sc.glow) sc.glow.setAttribute('opacity', (.32 * c01((t - sc.start) / (sc.drawEnd - sc.start + .01))).toFixed(3));
     for (const s of sc.list) {
       const q = ease(c01((t - s.start) / s.dur));
-      if (s.kind === 't') s.rect.setAttribute('width', ((s.bb.width + 24) * q).toFixed(1));
+      if (s.kind === 't') s.rect.setAttribute('width', q >= 1 ? (s.bb.width + 24 + 4 * W).toFixed(1) : ((s.bb.width + 24) * q).toFixed(1));   // fully open when written, so a late font can never cut the text
       else { s.el.style.visibility = q > 0 ? 'visible' : 'hidden'; s.el.style.strokeDashoffset = s.len * (1 - q); }
     }
   });
@@ -677,6 +717,7 @@ function stageBox(node) {
     for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
       const a = boxes[i].b, c = boxes[j].b;
       if (inside(a, c) || inside(c, a)) continue;                        // text inside a bubble/button is intended
+      if (boxes[i].n.dataset.wrap && boxes[i].n.dataset.wrap === boxes[j].n.dataset.wrap) continue;   // two lines of one wrapped text
       const ix = Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0), iy = Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0);
       if (ix > 12 && iy > 12 && ix * iy > .12 * Math.min((a.x1 - a.x0) * (a.y1 - a.y0), (c.x1 - c.x0) * (c.y1 - c.y0)))
         WARN.push({ scene: k + 1, type: 'tabrakan', msg: `${boxes[i].name} bertabrakan dengan ${boxes[j].name}` });
@@ -687,6 +728,9 @@ function stageBox(node) {
       WARN.push({ scene: k + 1, type: 'kecil', msg: 'gambar utama terlalu kecil (perbesar sampai ±50% lebar/tinggi layar)' });
     if (sc.list.length > (NARROW ? 40 : 50)) WARN.push({ scene: k + 1, type: 'ramai', msg: `${sc.list.length} goresan — terlalu ramai, sederhanakan` });
   });
+  // structure: hook first, CTA last (layout.hook / layout.cta, or { kind: 'hook' | 'cta', ... } on a custom scene)
+  if (SCENES[0] && SCENES[0].kind !== 'hook') WARN.unshift({ scene: 1, type: 'struktur', msg: 'adegan pertama bukan HOOK — pakai layout.hook (pertanyaan / fakta mengejutkan)' });
+  if (SCENES.length > 1 && SCENES[SCENES.length - 1].kind !== 'cta') WARN.push({ scene: SCENES.length, type: 'struktur', msg: 'adegan terakhir bukan CTA — pakai layout.cta' });
   WARN.forEach(w => console.warn(`HandDrawn QA${w.scene ? ' adegan ' + w.scene : ''}: ${w.msg}`));
 }
 window.QA = WARN;
@@ -697,7 +741,7 @@ if (!isFinite(TOTAL)) {   // should never happen; show it instead of a blank pag
 window.seek = seek; window.TOTAL = TOTAL; window.FPS = FPS;
 // Timeline for the audio mixer (scripts/mix.py): when narration starts, when the pen touches paper, when pages flip.
 window.TIMELINE = {
-  total: TOTAL, fps: FPS, w: W, h: H,
+  total: TOTAL, fps: FPS, w: W, h: H, style: SAND ? 'sand' : 'whiteboard',
   scenes: S.map(s => ({ start: s.start, narrStart: s.narrStart, drawEnd: s.drawEnd, holdEnd: s.holdEnd, flipEnd: s.flipEnd })),
   strokes: S.flatMap(s => s.list.map(x => [+x.start.toFixed(3), +x.end.toFixed(3), x.kind])),
   flips: S.slice(0, -1).map(s => s.holdEnd),
@@ -736,6 +780,12 @@ if (location.search.includes('render=1')) { seek(0); return; }
   range.value = t.toFixed(2); timeEl.textContent = `${fmt(t)} / ${fmt(TOTAL)}`;
   requestAnimationFrame(loop);
 })(performance.now());
-})();
+})().catch(e => {   // show a readable error instead of a blank page, so it can be pasted back into the chat
+  console.error(e);
+  const box = document.createElement('div'); box.className = 'qa';
+  box.style.cssText = 'margin:16px;font:14px/1.5 system-ui,sans-serif;color:#ffb8a8;background:#2e2220;border:1px solid #6b3b33;border-radius:6px;padding:10px 14px';
+  box.textContent = 'Error HandDrawn: ' + (e && e.message || e) + ' — tempel pesan ini ke chat supaya adegannya diperbaiki.';
+  (document.querySelector('.wrap') || document.body).appendChild(box);
+});
 } };
 })();
