@@ -140,8 +140,9 @@ const paint = (c, ...items) => items.flat().map(function rec(it) { return it.t =
 // grass(x0, x1, y, colour): a row of short blades, drawn left to right
 const grass = (x0, x1, y, c = '#43A047', h = 46, seed = 3) => { const R = rng(seed); let d = '';
   for (let x = x0; x < x1; x += 13 + R() * 9) { const hh = h * (.6 + R() * .5), lean = (R() - .4) * 22; d += ` M${f(x)},${f(y + R() * 8)} q${f(lean * .3)},${f(-hh * .6)} ${f(lean)},${f(-hh)}`; }
-  return { t: 'p', d: d.trim(), w: 6, c, qa: 'bg' }; };
+  return { t: 'g', x: 0, y: 0, s: 1, r: 0, act: 'wave', qa: 'bg', items: [{ t: 'p', d: d.trim(), w: 6, c }] }; };   // grass always waves
 // act('hop', G(...)): the drawing comes alive once it is finished — hop | bounce | breathe | sway | shiver | droop | bob | pulse | nod | float
+//   | ripple (water) | wave (grass, plants) | wiggle (small things on the ground) | flutter (flags, leaves) | twinkle (sparkles) | none (meant to stay still)
 const act = (name, ...items) => items.flat().map(it => ({ ...(it.t === 'g' ? it : { t: 'g', x: 0, y: 0, s: 1, r: 0, items: [it] }), act: name }));
 // journey(G(...), [{ at: 'one', x, y }, …]): the drawing jumps (arc) to stage position x, y when the narrator says [one] —
 // one character travelling through the scene instead of being drawn twice. Options per step: h (arc height), d (seconds), tilt.
@@ -427,7 +428,7 @@ const chars = (() => {
       const dy = pose === 'sleep' && def.legs ? def.legs.len * .6 : 0, a = def.special && def.special[pose] && def.specialFace ? def.specialFace[pose] : def.face;
       return [grp(face(pose === 'sleep' ? 'sleepy' : mood, a, def.c, sd), { x: 0, y: dy, r: pose === 'jump' ? -8 : 0 })];
     };
-    const fn = ({ mood = 'happy', pose = 'stand', seed = 1 } = {}) => [...body(pose, seed), ...faceOf(mood, pose, seed)];
+    const fn = ({ mood = 'happy', pose = 'stand', seed = 1 } = {}) => [grp([...body(pose, seed), ...faceOf(mood, pose, seed)], { act: 'breathe' })];   // alive by default
     fn.body = (pose, sd) => body(pose, sd); fn.face = (mood, pose, sd) => faceOf(mood, pose, sd); fn.colors = def.c;
     return fn;
   }
@@ -674,6 +675,124 @@ await (document.fonts.ready || Promise.resolve());
 // Some preview frames start hidden; give them a moment to get a size before measuring text.
 for (let i = 0; i < 40 && !(stage.getBoundingClientRect().width > 0); i++) await new Promise(r => setTimeout(r, 100));
 
+// ---------- scene backgrounds: time of day + place (scene.bg = { time, place, weather }) ----------
+// Not drawn by the hand: a soft watercolour wash (sky + ground) and a faint far-away sketch fade in when the scene starts,
+// so the mood is there at once and the hand only draws what matters to the story.
+const BG_TIME = {
+  dawn:      { sky: ['#B39DDB', '#FFCCBC'], light: '#FFAB91', sun: [.18, .56, '#FF8A65'], ground: .9 },
+  morning:   { sky: ['#BBDEFB', '#FFF3E0'], light: '#FFE082', sun: [.16, .3, '#FFCA28'], ground: 1 },
+  noon:      { sky: ['#64B5F6', '#E3F2FD'], light: '#FFF59D', sun: [.82, .14, '#FFD54F'], ground: 1 },
+  afternoon: { sky: ['#90CAF9', '#FFE0B2'], light: '#FFCC80', sun: [.8, .3, '#FFB300'], ground: .95 },
+  sunset:    { sky: ['#7E57C2', '#FF8A65'], light: '#FFAB91', sun: [.75, .56, '#FF7043'], ground: .8 },
+  night:     { sky: ['#1A237E', '#3949AB'], light: '#C5CAE9', moon: [.8, .18], ground: .55, dim: .2 },
+};
+const BG_PLACE = {
+  field:    { ground: '#AED581', far: 'hills' },   park:    { ground: '#A5D6A7', far: 'park' },
+  forest:   { ground: '#81C784', far: 'trees' },   river:   { ground: '#A5D6A7', far: 'hills' },
+  beach:    { ground: '#FFE0B2', far: 'sea' },     village: { ground: '#C5E1A5', far: 'houses' },
+  mountain: { ground: '#C5E1A5', far: 'mountains' }, home:  { wall: '#FFF3E0', floor: '#D7CCC8', far: 'room' },
+};
+function mixHex(a, b, k) { const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)); const x = p(a), y = p(b);
+  return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * k).toString(16).padStart(2, '0')).join(''); }
+let bgId = 0;
+function makeBg(spec) {
+  const T0 = BG_TIME[spec.time] || BG_TIME.morning, PL = BG_PLACE[spec.place] || BG_PLACE.field, id = 'bg' + (bgId++);
+  const motion = spec.motion || 'gentle', live = motion === 'still' ? 0 : motion === 'lively' ? 1.8 : 1;
+  const g = el('g', { 'pointer-events': 'none' }), HZ = H * (TALL ? .58 : .62);
+  // layers for parallax: sky (farthest) → far sketch → ground → weather (nearest)
+  const skyL = el('g', {}), farL = el('g', {}), groundL = el('g', {}), wxL = el('g', {});
+  g.appendChild(skyL); g.appendChild(groundL); g.appendChild(farL); g.appendChild(wxL);
+  const anim = { clouds: [], stars: [], sun: null, rays: null, moonGlow: null, waves: [], birds: [], live };
+  if (!defs.querySelector('#bgWash')) defs.insertAdjacentHTML('beforeend',
+    '<filter id="bgWash" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="3" seed="4" result="t"/>' +
+    '<feDisplacementMap in="SourceGraphic" in2="t" scale="26" xChannelSelector="R" yChannelSelector="G"/></filter>' +
+    '<filter id="bgSketch"><feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="2" seed="7" result="t"/><feDisplacementMap in="SourceGraphic" in2="t" scale="4"/></filter>' +
+    '<filter id="bgGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="22"/></filter>');
+  const dark = c => T0.ground < 1 ? mixHex(c, '#1A237E', 1 - T0.ground) : c;
+  if (PL.far === 'room') {   // indoors: wall + floor, a window showing the time of day
+    skyL.appendChild(el('rect', { x: -40, y: -40, width: W + 80, height: H * .7 + 40, fill: dark(PL.wall), opacity: .75, filter: 'url(#bgWash)' }));
+    groundL.appendChild(el('rect', { x: -40, y: H * .7, width: W + 80, height: H * .3 + 40, fill: dark(PL.floor), opacity: .7, filter: 'url(#bgWash)' }));
+    const wx = W * .66, wy = H * .14, ww = W * .2, wh = H * .3;
+    farL.appendChild(el('rect', { x: wx, y: wy, width: ww, height: wh, fill: T0.sky[0], opacity: .7 }));
+    if (!T0.moon) { const c = el('path', { d: cloud(wx + ww * .35, wy + wh * .35, ww * .4, wh * .22, 9, 51), fill: '#FFFFFF', opacity: .8 }); farL.appendChild(c);
+      anim.clouds.push({ el: c, v: 5, x0: wx + ww * .35, lo: wx, hi: wx + ww, clip: true }); }
+    farL.appendChild(el('path', { d: `M${wx},${wy} h${ww} v${wh} h${-ww} Z M${wx + ww / 2},${wy} v${wh} M${wx},${wy + wh / 2} h${ww}`, fill: 'none', stroke: '#8D6E63', 'stroke-width': 6, opacity: .55, filter: 'url(#bgSketch)' }));
+    return { g, layers: { skyL, farL, groundL, wxL }, anim, dim: T0.dim || 0 };
+  }
+  // sky and ground wash
+  const lg = el('linearGradient', { id: id + 's', x1: 0, y1: 0, x2: 0, y2: 1 }); lg.appendChild(el('stop', { offset: 0, 'stop-color': T0.sky[0] })); lg.appendChild(el('stop', { offset: 1, 'stop-color': T0.sky[1] })); defs.appendChild(lg);
+  skyL.appendChild(el('rect', { x: -120, y: -120, width: W + 240, height: HZ + 150, fill: `url(#${id}s)`, opacity: .62, filter: 'url(#bgWash)' }));
+  const gd = PL.far === 'sea' ? `M-120,${HZ + 40} L${W + 120},${HZ + 40} L${W + 120},${H + 120} L-120,${H + 120} Z` : `M-120,${HZ + 10} C${W * .3},${HZ - 30} ${W * .6},${HZ + 40} ${W + 120},${HZ} L${W + 120},${H + 120} L-120,${H + 120} Z`;
+  if (PL.far === 'sea') farL.appendChild(el('rect', { x: -120, y: HZ - 10, width: W + 240, height: 60, fill: dark('#81D4FA'), opacity: .6, filter: 'url(#bgWash)' }));
+  groundL.appendChild(el('path', { d: gd, fill: dark(PL.ground), opacity: .55, filter: 'url(#bgWash)' }));
+  // sun (soft glow + slowly turning rays) or moon (glow, crescent) and twinkling stars
+  // bg.sun / bg.moon: [x, y] as fractions of the frame, or false; bg.clouds: false
+  if (T0.sun && spec.sun !== false) {
+    const [sx, sy] = spec.sun || T0.sun, c = T0.sun[2], cx = W * sx, cy = H * sy, r = 70 * U;
+    const sg = el('g', {}); skyL.appendChild(sg);
+    sg.appendChild(el('circle', { cx, cy, r: r * 1.7, fill: c, opacity: .22, filter: 'url(#bgGlow)' }));
+    const rays = el('g', { stroke: c, 'stroke-width': 7 * U, 'stroke-linecap': 'round', opacity: .4 }); sg.appendChild(rays);
+    for (let i = 0; i < 10; i++) { const a = i * Math.PI / 5; rays.appendChild(el('path', { d: `M${cx + Math.cos(a) * r * 1.35},${cy + Math.sin(a) * r * 1.35} L${cx + Math.cos(a) * r * 1.85},${cy + Math.sin(a) * r * 1.85}` })); }
+    sg.appendChild(el('path', { d: circ(cx, cy, r, 9), fill: c, opacity: .6, filter: 'url(#bgWash)' }));
+    anim.sun = { g: sg, cx, cy }; anim.rays = { g: rays, cx, cy };
+  }
+  if (T0.moon && spec.moon !== false) { const [mx, my] = spec.moon || spec.sun || T0.moon, cx = W * mx, cy = H * my - 60 * U, r = 60 * U;
+    const glow = el('circle', { cx, cy: cy + r * .0, r: r * 2.2, fill: '#FFF9C4', opacity: .18, filter: 'url(#bgGlow)' }); skyL.appendChild(glow); anim.moonGlow = glow;
+    skyL.appendChild(el('circle', { cx, cy, r, fill: '#FFF9C4', opacity: .85 }));
+    skyL.appendChild(el('path', { d: circ(cx + 26 * U, cy + 6 * U, 52 * U, 3), fill: mixHex(T0.sky[0], '#FFFFFF', .36) }));   // same tone as the washed sky → crescent
+    const R = rng(11); for (let i = 0; i < 30; i++) { const x = R() * W, y = R() * HZ * .8, st = el('path', { d: `M${x - 6},${y} L${x + 6},${y} M${x},${y - 6} L${x},${y + 6}`, stroke: '#FFF9C4', 'stroke-width': 3 });
+      skyL.appendChild(st); anim.stars.push({ el: st, base: .45 + R() * .45, w: 1.2 + R() * 2.5, ph: R() * 6 }); } }
+  else if (spec.clouds !== false) [[.3, .16, 300, 9], [.55, .26, 220, 14], [.9, .12, 260, 7]].forEach(([x, y, w, v], i) => {
+    const c = el('path', { d: cloud(W * x, H * y, w * U, w * .45 * U, 10, 20 + i), fill: '#FFFFFF', opacity: .6, filter: 'url(#bgWash)' }); skyL.appendChild(c);
+    anim.clouds.push({ el: c, v, x0: W * x, lo: -W * .25, hi: W * 1.25 }); });
+  // faint far-away sketch (not drawn by the hand)
+  const sk = el('g', { fill: 'none', stroke: dark('#7A8F6A'), 'stroke-width': 3.5, opacity: .42, filter: 'url(#bgSketch)', 'stroke-linecap': 'round' }); farL.appendChild(sk);
+  const line = d => { const p = el('path', { d }); sk.appendChild(p); return p; };
+  const R = rng(5);
+  if (PL.far === 'hills' || PL.far === 'park') { line(`M-120,${HZ - 10} C${W * .15},${HZ - 120 * U} ${W * .3},${HZ - 110 * U} ${W * .42},${HZ - 20} C${W * .55},${HZ - 150 * U} ${W * .8},${HZ - 130 * U} ${W + 120},${HZ - 30}`); }
+  if (PL.far === 'park') { for (let i = 0; i < 5; i++) { const x = W * (.12 + i * .19), y = HZ - 30; line(cloud(x, y - 60 * U, 90 * U, 80 * U, 8, 30 + i)); line(`M${x},${y - 20 * U} L${x},${y + 10}`); }
+    line(`M-120,${HZ + 30} L${W + 120},${HZ + 30} M-120,${HZ + 5} L${W + 120},${HZ + 5}` + Array.from({ length: 24 }, (_, i) => ` M${i * W / 23},${HZ - 5} L${i * W / 23},${HZ + 40}`).join('')); }
+  if (PL.far === 'trees') for (let i = 0; i < 9; i++) { const x = W * (i / 8), h = (110 + R() * 70) * U; line(cloud(x, HZ - h * .55, 150 * U, h, 9, 40 + i)); }
+  if (PL.far === 'houses') { line(`M-120,${HZ - 10} C${W * .3},${HZ - 90 * U} ${W * .6},${HZ - 70 * U} ${W + 120},${HZ - 20}`);
+    for (let i = 0; i < 4; i++) { const x = W * (.15 + i * .22), y = HZ - 12, w = 90 * U, h = 70 * U; line(`M${x - w / 2},${y} v${-h} h${w} v${h} M${x - w / 2 - 12},${y - h} L${x},${y - h - 55 * U} L${x + w / 2 + 12},${y - h} M${x - 12},${y} v${-34 * U} h24 v${34 * U}`); }
+    if (T0.moon) for (let i = 0; i < 4; i++) { const x = W * (.15 + i * .22); farL.appendChild(el('rect', { x: x - 30 * U, y: HZ - 62 * U, width: 22 * U, height: 20 * U, fill: '#FFE082', opacity: .7 })); } }   // lit windows at night
+  if (PL.far === 'mountains') { line(`M-120,${HZ} L${W * .18},${HZ - 300 * U} L${W * .36},${HZ - 40} L${W * .55},${HZ - 380 * U} L${W * .78},${HZ - 60} L${W * .9},${HZ - 220 * U} L${W + 120},${HZ - 30}`);
+    line(`M${W * .5},${HZ - 300 * U} L${W * .55},${HZ - 380 * U} L${W * .6},${HZ - 300 * U}`); }
+  if (PL.far === 'sea') { line(`M-120,${HZ - 10} L${W + 120},${HZ - 10}`); for (let i = 0; i < 7; i++) anim.waves.push({ el: line(`M${W * (.08 + i * .14)},${HZ + 15} q20,-12 40,0 q20,12 40,0`), ph: i * .9 }); }
+  if (PL.far === 'river') for (let i = 0; i < 5; i++) anim.waves.push({ el: line(`M${W * (.1 + i * .2)},${HZ + 30 * U} q16,-9 32,0 q16,9 32,0`), ph: i * 1.3 });
+  // a few far-away birds crossing the sky now and then (daytime)
+  if (!T0.moon && live) for (let i = 0; i < (live > 1 ? 3 : 1); i++) { const b = el('path', { d: 'M-14,0 Q-7,-8 0,0 Q7,-8 14,0', fill: 'none', stroke: dark('#5D6D7E'), 'stroke-width': 3, opacity: .55, 'stroke-linecap': 'round' });
+    skyL.appendChild(b); anim.birds.push({ el: b, y: H * (.12 + i * .07), v: 70 + i * 25, ph: i * 9 + 3 }); }
+  // weather
+  let weather = null;
+  if (spec.weather === 'rain' || spec.weather === 'snow') {
+    const wg = el('g', { opacity: spec.weather === 'rain' ? .55 : .9 }); wxL.appendChild(wg); const Rw = rng(17), drops = [];
+    for (let i = 0; i < 70; i++) { const d = el('path', spec.weather === 'rain' ? { d: 'M0,0 l-6,26', stroke: '#5C9BD5', 'stroke-width': 3, 'stroke-linecap': 'round' } : { d: circ(0, 0, 8, i), fill: '#FFFFFF', stroke: '#90A4AE', 'stroke-width': 2.5 });
+      wg.appendChild(d); drops.push({ d, x: Rw() * (W + 100), y: Rw() * H, v: spec.weather === 'rain' ? 900 + Rw() * 300 : 70 + Rw() * 50, sway: Rw() * 6 }); }
+    weather = { drops, snow: spec.weather === 'snow' };
+  }
+  return { g, layers: { skyL, farL, groundL, wxL }, anim, dim: T0.dim || 0, weather };
+}
+// Living background at time t (u = seconds since the scene's page started to show, f = current camera zoom)
+function bgUpdate(bg, t, u, f, zx, zy) {
+  const A = bg.anim, lv = A.live;
+  // intro: the background settles from a gentle zoom as the scene opens; then parallax follows the camera zoom
+  const intro = 1 + .08 * (1 - ease(c01(u / 1.6))) * (lv ? 1 : 0);
+  bg.g.setAttribute('transform', intro === 1 ? '' : `translate(${(W / 2 * (1 - intro)).toFixed(1)} ${(H * .45 * (1 - intro)).toFixed(1)}) scale(${intro.toFixed(4)})`);
+  const par = (el, k) => { const s = 1 + (f - 1) * k; el.setAttribute('transform', s === 1 ? '' : `translate(${(zx * (1 - s)).toFixed(1)} ${(zy * (1 - s)).toFixed(1)}) scale(${s.toFixed(4)})`); };
+  par(bg.layers.skyL, .2); par(bg.layers.farL, .45); par(bg.layers.groundL, .7); par(bg.layers.wxL, .9);
+  if (!lv) return;
+  for (const c of A.clouds) { const span = c.hi - c.lo, x = ((c.x0 - c.lo + u * c.v * lv) % span + span) % span + c.lo; c.el.setAttribute('transform', `translate(${(x - c.x0).toFixed(1)} 0)`); }
+  for (const st of A.stars) st.el.setAttribute('opacity', (st.base * (.55 + .45 * Math.sin(t * st.w + st.ph))).toFixed(2));
+  if (A.rays) A.rays.g.setAttribute('transform', `rotate(${(t * 5 * lv % 360).toFixed(2)} ${A.rays.cx} ${A.rays.cy})`);
+  if (A.sun) { const k = 1 + .03 * Math.sin(t * 1.3); A.sun.g.setAttribute('transform', `translate(${(A.sun.cx * (1 - k)).toFixed(1)} ${(A.sun.cy * (1 - k)).toFixed(1)}) scale(${k.toFixed(4)})`); }
+  if (A.moonGlow) A.moonGlow.setAttribute('opacity', (.14 + .08 * Math.sin(t * .9)).toFixed(3));
+  for (const w of A.waves) w.el.setAttribute('transform', `translate(${(8 * Math.sin(t * 1.4 + w.ph)).toFixed(1)} 0)`);
+  for (const b of A.birds) { const span = W + 400, x = ((u + b.ph) * b.v * lv) % (span * 2) - 200;   // crosses, then stays away for a while
+    if (x > span - 200) { b.el.setAttribute('opacity', '0'); continue; }
+    b.el.setAttribute('opacity', '.55'); b.el.setAttribute('transform', `translate(${x.toFixed(1)} ${(b.y + 12 * Math.sin(t * 1.7 + b.ph)).toFixed(1)}) scale(1 ${(1 - .5 * Math.abs(Math.sin(t * 7 + b.ph))).toFixed(2)})`); }
+}
+
 // Each scene is a page of paper. Pages are stacked; earlier pages lie on top and are flipped away.
 const fullRect = `0,0 ${W},0 ${W},${H} 0,${H}`;
 const S = SCENES.map((sc, k) => {
@@ -681,9 +800,11 @@ const S = SCENES.map((sc, k) => {
   const cp = el('clipPath', { id: `page${k}` }), poly = el('polygon', { points: fullRect });
   cp.appendChild(poly); defs.appendChild(cp);
   if (!SAND) page.appendChild(el('rect', { width: W, height: H, fill: MARKER ? '#FFFFFF' : '#F7F5EF' }));
+  const bg = sc.bg && !SAND ? makeBg(sc.bg) : null; if (bg) page.appendChild(bg.g);   // mood: sky, ground, far sketch (fades in)
   const glow = SAND ? el('ellipse', { cx: CX, cy: CY, rx: 300, ry: 220, fill: '#ffcf7e', opacity: 0, filter: 'url(#sandGlow)' }) : null;   // thinner sand behind the picture
   if (glow) page.appendChild(glow);
   const g = el('g', { filter: SAND ? 'url(#sandCarve)' : 'url(#wobble)' }); page.appendChild(g);
+  if (bg && bg.dim) page.appendChild(el('rect', { width: W, height: H, fill: '#1A237E', opacity: bg.dim, style: 'mix-blend-mode:multiply', 'pointer-events': 'none' }));   // night: everything a little darker
   pagesLayer.insertBefore(page, pagesLayer.firstChild);
   number(sc.items); const list = []; render(sc.items, g, 1, list);
   // narration cues: scene.say = 'Kancil walks to the [river] …' → items wrapped in at('river', …) start when that word is spoken
@@ -704,7 +825,7 @@ const S = SCENES.map((sc, k) => {
   const rank = e => (e.cue && order.includes(e.cue)) ? 1 + order.indexOf(e.cue) : 0;
   list.sort((a, b) => rank(a) - rank(b) || a.seq - b.seq || a.ord - b.ord);
   { const seen = new Set(); for (const e of list) if (e.cue && cues && cues[e.cue] != null && !seen.has(e.cue)) { e.cueAt = cues[e.cue]; seen.add(e.cue); } }
-  return { page, poly, list, hold: sc.hold, content: g, glow, segs, cues, zoom: sc.zoom || null };
+  return { page, poly, list, hold: sc.hold, content: g, glow, segs, cues, zoom: sc.zoom || null, bg };
 });
 
 // ---------- automatic layout fixer (runs before timing, so the hand follows the fixed positions) ----------
@@ -970,9 +1091,22 @@ function actTransform(a, t) {
     case 'pulse': return about(a.bx, a.cy, `scale(${(1 + .07 * S2(PI2 * u / .9) * e).toFixed(3)})`);
     case 'nod': return about(a.bx, a.by, `rotate(${(5 * S2(PI2 * u / 2.8) * e).toFixed(2)})`);
     case 'float': return `translate(0 ${(-8 * k * S2(PI2 * u / 1.8) * e).toFixed(1)})`;
+    case 'ripple': return `translate(${(7 * k * S2(PI2 * u / 2.2) * e).toFixed(1)} ${(2 * k * S2(PI2 * u / 1.3) * e).toFixed(1)}) ` + about(a.bx, a.cy, `scale(1 ${(1 + .025 * S2(PI2 * u / 1.7) * e).toFixed(4)})`);
+    case 'wave': return about(a.bx, a.by, `skewX(${(4 * S2(PI2 * u / 2.4) * e).toFixed(2)})`);
+    case 'wiggle': return about(a.bx, a.by, `rotate(${(2.5 * S2(PI2 * u / 1.6) * e).toFixed(2)})`);
+    case 'flutter': return about(a.bx, a.cy, `rotate(${(4 * S2(PI2 * u / .7) * e).toFixed(2)}) scale(1 ${(1 + .04 * S2(PI2 * u / .5) * e).toFixed(3)})`);
+    case 'twinkle': return about(a.bx, a.cy, `scale(${(1 + .12 * Math.abs(S2(PI2 * u / 1.1)) * e).toFixed(3)})`);
+    case 'none': return '';
     default: return '';
   }
 }
+// story mode: every finished drawing should move a little, in a way that fits it — warn about drawings that stay frozen
+S.forEach((sc, k) => {
+  if (!sc.segs || !sc.segs.length) return;   // story scenes only (scene.say)
+  const moving = n => n.dataset.act != null || n.dataset.path != null || n.querySelector('[data-act],[data-path]');
+  const frozen = [...sc.content.children].filter(n => n.tagName !== 'clipPath' && !n.classList.contains('acc') && !(n.dataset.qa === 'bg' && n.tagName === 'path') && !moving(n));
+  if (frozen.length) WARN.push({ scene: k + 1, type: 'diam', msg: `${frozen.length} gambar diam setelah digambar (${frozen.slice(0, 3).map(n => n.tagName === 'text' ? '"' + n.textContent.slice(0, 12) + '"' : 'gambar').join(', ')}) — beri act(): air ripple, rumput wave, pohon sway, benda kecil wiggle, bendera flutter, tokoh breathe, atau none kalau memang diam` });
+});
 // story narration: warn when the narrator is silent for long while the hand keeps drawing
 S.forEach((sc, k) => {
   if (!sc.segs || !sc.segs.length) return;
@@ -1067,6 +1201,12 @@ function seek(t) {
       sc.poly.setAttribute('points', pts(cut(RECT, f, true)));
       flap.setAttribute('points', flapPts); flapShadow.setAttribute('points', flapPts); flipfx.style.display = ''; }
     } else sc.poly.setAttribute('points', fullRect);
+    if (sc.bg) { const k0 = k > 0 ? S[k - 1].holdEnd : -0.3;   // fades in while the page turns to it (or at the very start)
+      sc.bg.g.style.opacity = String(k === 0 ? Math.min(1, (t + .3) / .8) : c01((t - k0) / Math.max(.4, FLIP * .6)));
+      const z = sc.zoom ? ease(c01((t - sc.drawEnd - 0.3) / Math.max(1, sc.holdEnd - sc.drawEnd - 0.3))) : 0, zf = sc.zoom ? 1 + ((sc.zoom.s || 1.15) - 1) * z : 1;
+      bgUpdate(sc.bg, t, t - k0, zf, sc.zoom ? sc.zoom.x : W / 2, sc.zoom ? sc.zoom.y : H / 2);
+      if (sc.bg.weather) for (const d of sc.bg.weather.drops) { const y = (d.y + t * d.v) % (H + 60) - 30, x = d.x + (sc.bg.weather.snow ? Math.sin(t * 1.3 + d.sway) * 18 : -((d.y + t * d.v) % (H + 60)) * .23);
+        d.d.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)})`); } }
     for (const a of sc.acts || []) a.g.setAttribute('transform', actTransform(a, t));
     for (const pth of sc.paths || []) {   // offset from the drawn position, in the group's own (scaled) units
       let x = 0, y = 0, rot = 0, stepping = null; const o = pth.steps.length ? pth.steps[0].from : { x: 0, y: 0 };
