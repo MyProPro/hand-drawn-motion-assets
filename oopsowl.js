@@ -1477,7 +1477,8 @@ ${notes}`;
 if (typeof module === "object" && typeof module.exports === "object") Object.assign(module.exports, WebMMuxer)
 
 // ===================== core: math, easing, world geometry =====================
-const W = 1920, H = 1080, FPS = 60, DUR = 30;
+let W = 1920, H = 1080; const FPS = 60, DUR = 30; let VERTICAL = false, VZOOM = 1.3; // W/H change for 9:16 (OopsOwl.film({ aspect: '9:16' }))
+const pick = (wide, tall) => VERTICAL ? tall : wide; // choose a value per aspect, e.g. a camera
 const G = 2400, WR = 42, WB = 230;
 const RAMP_X0 = 1110, LIP_X = 1340, LIP_H = 100;
 const POND_X0 = 1560, POND_X1 = 2060, WATER_Y = 794;
@@ -1857,7 +1858,8 @@ function buildOwlTex() {
   ART.speckle = s;
 }
 
-function buildArt() { buildSky(); buildClouds(); buildMoon(); buildHills(); buildGround(); buildTree(); buildGrain(); buildOwlTex(); }
+function buildArt() { buildSky(); buildClouds(); buildMoon(); buildHills(); buildGround(); buildTree(); buildGrain(); buildOwlTex();
+  { const g = ART.ground; const d = g.getContext('2d').getImageData(Math.floor(g.width / 2), g.height - 3, 1, 1).data; ART.groundDeep = `rgb(${d[0]},${d[1]},${d[2]})`; } }
 
 // ===================== actors: motorcycle + great horned owl =====================
 let LX = 1; // light direction sign in local space (moon at upper right in world)
@@ -2244,12 +2246,13 @@ function setupCanvas() {
   cv = document.getElementById('c'); cv.width = W; cv.height = H; ctx = cv.getContext('2d');
   actA = mk(W, H); aA = actA.getContext('2d'); actB = mk(W, H); aB = actB.getContext('2d');
 }
-function camT(c, cam) { c.setTransform(cam.z, 0, 0, cam.z, 960 - cam.x * cam.z + (cam.sx || 0), 540 - cam.y * cam.z + (cam.sy || 0)); }
-function w2s(cam, x, y) { return { x: (x - cam.x) * cam.z + 960 + (cam.sx || 0), y: (y - cam.y) * cam.z + 540 + (cam.sy || 0) }; }
+const ZK = cam => cam.z * (VERTICAL && !cam.raw ? VZOOM : 1); // 9:16 frames zoom in a little so characters fill the tall frame
+function camT(c, cam) { const z = ZK(cam); c.setTransform(z, 0, 0, z, W / 2 - cam.x * z + (cam.sx || 0), H / 2 - cam.y * z + (cam.sy || 0)); }
+function w2s(cam, x, y) { const z = ZK(cam); return { x: (x - cam.x) * z + W / 2 + (cam.sx || 0), y: (y - cam.y) * z + H / 2 + (cam.sy || 0) }; }
 function drawLayer(c, cam, img, L) {
-  const zf = C0.z * Math.pow(cam.z / C0.z, L.f);
+  const zf = C0.z * Math.pow(ZK(cam) / C0.z, L.f);
   const ox = C0.x + (cam.x - C0.x) * L.f, oy = C0.y + (cam.y - C0.y) * L.f;
-  c.setTransform(zf / L.s, 0, 0, zf / L.s, 960 + (L.x0 - ox) * zf, 540 + (L.y0 - oy) * zf);
+  c.setTransform(zf / L.s, 0, 0, zf / L.s, W / 2 + (L.x0 - ox) * zf, H / 2 + (L.y0 - oy) * zf);
   c.drawImage(img, 0, 0);
 }
 function bikeToWorld(b, px, py) {
@@ -2408,6 +2411,7 @@ function compose(T, S) {
   camT(c, cam);
   if (S.ground !== false) {
     c.save(); c.translate(GL.x0, GL.y0); c.scale(1 / GL.s, 1 / GL.s); c.drawImage(ART.ground, 0, 0); c.restore();
+    if (ART.groundDeep) { c.fillStyle = ART.groundDeep; c.fillRect(GL.x0, GL.y0 + GL.h - 2, GL.w, 4000); } // tall (9:16) frames can see below the ground art
     c.save(); c.translate(TREE_X, edgeY(TREE_X) + 6); c.rotate(S.treeRot || 0); c.drawImage(ART.tree, -350, -600, 700, 640); c.restore();
     waterDraw(c, T, cam, S.water);
   }
@@ -2439,7 +2443,7 @@ function compose(T, S) {
   grade(c, S.grade);
   // film grain, chosen deterministically from time
   const fi = Math.floor(T * 60 + 0.001); const gi = ART.grain[fi % 6];
-  c.globalCompositeOperation = 'overlay'; c.globalAlpha = 0.09; c.drawImage(gi, -((fi * 37) % 300), -((fi * 53) % 200), 960 * 2.4, 540 * 2.4);
+  c.globalCompositeOperation = 'overlay'; c.globalAlpha = 0.09; c.drawImage(gi, -((fi * 37) % 300), -((fi * 53) % 200), Math.max(W, H) * 1.25, Math.max(W, H) * 1.25);
   c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
   if (S.post) { c.setTransform(1, 0, 0, 1, 0, 0); S.post(c); }
 }
@@ -2980,8 +2984,8 @@ function wipeShot(T, Told, Tnew, riderX, drawRider, vx, gradeName) {
   aB.globalAlpha = 1; aB.globalCompositeOperation = 'source-over';
   c.drawImage(actB, 0, 0);
 }
-const RIDE_CAM = { x: 0, y: 0, z: 2.0 };
-function riderBike(sx, sy, rot) { const R = { x: (sx - 960) / 2, y: (sy - 540) / 2 }; return { R, F: { x: R.x + WB, y: R.y }, rotR: rot, rotF: rot + 0.7, dir: 1, omega: 30, comp: 0, stand: 0 }; }
+const RIDE_CAM = { x: 0, y: 0, z: 2.0, raw: true };
+function riderBike(sx, sy, rot) { const R = { x: (sx - W / 2) / 2, y: (sy - H / 2) / 2 }; return { R, F: { x: R.x + WB, y: R.y }, rotR: rot, rotF: rot + 0.7, dir: 1, omega: 30, comp: 0, stand: 0 }; }
 shot('t1', P2.T1, P2.S2, (lt, T) => ({
   custom: () => {
     const u = lt / (P2.S2 - P2.T1); const sx = lerp(-650, 2650, sineInOut(u) * 0.35 + u * 0.65);
@@ -3548,17 +3552,18 @@ window.seekIntro = function (t) {
   const c = ctx; c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
   c.drawImage(ART.sky, 0, 0);
   // moon swells up behind
-  const ms = spring(t - 0.05, 6, 0.6); const mr = 330 * (0.55 + 0.45 * ms), my = 520 - 60 * ms;
-  c.drawImage(ART.moon, 960 - mr * 320 / 300, my - mr * 320 / 300, mr * 640 / 300, mr * 640 / 300);
+  const DY = (H - 1080) / 2, CX = W / 2;
+  const ms = spring(t - 0.05, 6, 0.6); const mr = 330 * (0.55 + 0.45 * ms), my = 520 - 60 * ms + DY;
+  c.drawImage(ART.moon, CX - mr * 320 / 300, my - mr * 320 / 300, mr * 640 / 300, mr * 640 / 300);
 
   // half-body owl rising from below the frame
   const S = 6.6; const o = introOwl(t); const hp = owlHeadPos(o);
   const rise = 620 * (1 - spring(t - INTRO.rise, 8, 0.55));
-  const hipY = 490 - S * hp.y + rise;
-  c.setTransform(S, 0, 0, S, 960 - S * hp.x, hipY); LX = 1; drawOwl(c, o, 'all');
+  const hipY = 490 - S * hp.y + rise + DY;
+  c.setTransform(S, 0, 0, S, CX - S * hp.x, hipY); LX = 1; drawOwl(c, o, 'all');
   // the ring of letters pops in, one per note, then turns slowly
   c.setTransform(1, 0, 0, 1, 0, 0);
-  const N = INTRO.ring.length, R = 395, cx = 960, cy = 490 + rise * 0.15;
+  const N = INTRO.ring.length, R = 395, cx = CX, cy = 490 + rise * 0.15 + DY;
   const rot = 0.22 * Math.max(0, t - INTRO.r0) + 0.06 * Math.max(0, wobble(t - INTRO.hit, 3, 5));
   c.font = '700 104px Fredoka'; c.textAlign = 'center'; c.textBaseline = 'middle';
   for (let i = 0; i < N; i++) {
@@ -3572,7 +3577,7 @@ window.seekIntro = function (t) {
     c.restore();
   }
   grade(c, { mul: GR.cool[0], sat: 0.95 });
-  const fi = Math.floor(t * 24); c.globalCompositeOperation = 'overlay'; c.globalAlpha = 0.09; c.drawImage(ART.grain[fi % 6], -((fi * 37) % 300), -((fi * 53) % 200), 960 * 2.4, 540 * 2.4);
+  const fi = Math.floor(t * 24); c.globalCompositeOperation = 'overlay'; c.globalAlpha = 0.09; c.drawImage(ART.grain[fi % 6], -((fi * 37) % 300), -((fi * 53) % 200), Math.max(W, H) * 1.25, Math.max(W, H) * 1.25);
   c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
 };
 // intro music: the Moon Motif as the channel's theme
@@ -3597,11 +3602,14 @@ const gy = x => edgeY(x) - 4;
 const base = x => Object.assign({ twig: true, yaw: 0.8, gx: 0.4, gy: 0, sq: 1, lean: 0, ruffle: 0.15 }, SIT_FEET, x);
 const owlAt = (c, o, x, y, dir, rot) => drawOwlWorld(c, o, x, y, dir, rot || 0);
 const NIGHT = { mul: GR.cool[0], sat: GR.cool[1] };
-const Sc = (cam, actors, o = {}) => Object.assign({ cam, moon: o.moon === undefined ? { x: 1500, y: 170, r: 130 } : o.moon, actors, grade: o.grade || NIGHT, pond: true, back: o.back, front: o.front }, o.extra || {});
+const Sc = (cam, actors, o = {}) => Object.assign({ cam, moon: o.moon === undefined ? { x: W * 0.78, y: H * 0.16, r: 130 } : o.moon, actors, grade: o.grade || NIGHT, pond: true, back: o.back, front: o.front }, o.extra || {});
 const path = (t, K) => { if (t <= K[0][0]) return K[0][1]; for (let i = 1; i < K.length; i++) if (t < K[i][0]) { const a = K[i - 1], b = K[i]; return lerp(a[1], b[1], sineInOut((t - a[0]) / (b[0] - a[0]))); } return K[K.length - 1][1]; };
 const dpath = (t, K) => (path(t + 0.01, K) - path(t - 0.01, K)) / 0.02;
 function smoke(c, T, src, t0, t1, rate, k = 1) { const r = mulberry(31); for (let t = t0; t < Math.min(T, t1); t += 1 / rate) { const a = T - t; if (a > 3) continue; const p = src(t); const x = p.x - 50 * a * k + (r() - 0.5) * 30, y = p.y - 60 * a - 20 * a * a; const rr = 8 + 22 * Math.sqrt(a); c.fillStyle = `rgba(120,124,140,${0.45 * (1 - a / 3)})`; c.beginPath(); c.arc(x, y, rr, 0, 7); c.arc(x + rr * 0.7, y - rr * 0.3, rr * 0.7, 0, 7); c.fill(); } }
-const word = (c, txt, x, y, s, a, col = '#f3e7b0') => { if (a <= 0) return; c.save(); c.globalAlpha = clamp(a); c.translate(x, y); c.scale(s, s); c.font = '700 54px Fredoka'; c.textAlign = 'center'; c.fillStyle = 'rgba(10,12,30,0.8)'; c.fillText(txt, 3, 3); c.fillStyle = col; c.fillText(txt, 0, 0); c.restore(); };
+const word = (c, txt, x, y, s, a, col = '#f3e7b0') => { if (a <= 0) return; c.save(); c.globalAlpha = clamp(a); c.font = '700 54px Fredoka';
+  { const m = c.getTransform(); const k = m.a || 1; const half = c.measureText(txt).width * s * k / 2 + 24; const sx = m.a * x + m.e, sy = m.d * y + m.f; // keep sound words inside the frame (both aspects)
+    const cx = half * 2 + 48 > W ? W / 2 : Math.min(Math.max(sx, half), W - half), cy = Math.min(Math.max(sy, 54 * s * k + 30), H - 30); x += (cx - sx) / k; y += (cy - sy) / (m.d || 1); }
+  c.translate(x, y); c.scale(s, s); c.textAlign = 'center'; c.fillStyle = 'rgba(10,12,30,0.8)'; c.fillText(txt, 3, 3); c.fillStyle = col; c.fillText(txt, 0, 0); c.restore(); };
 function starShape(c, x, y, r, rot, col = '#f6dc7a') { c.save(); c.translate(x, y); c.rotate(rot); c.fillStyle = col; c.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r; c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } c.closePath(); c.fill(); c.fillStyle = '#fff3c0'; c.beginPath(); c.arc(-r * 0.12, -r * 0.15, r * 0.22, 0, 7); c.fill(); c.restore(); }
 function streak(c, T, t0, dur, x0, y0, x1, y1) { const u = (T - t0) / dur; if (u < 0 || u > 1.25) return; const h = Math.min(u, 1), tl = Math.max(0, u - 0.25); const p = a => ({ x: lerp(x0, x1, a), y: lerp(y0, y1, a) }); const A = p(tl), B = p(h); c.strokeStyle = 'rgba(255,240,190,0.75)'; c.lineWidth = 4; c.lineCap = 'round'; c.beginPath(); c.moveTo(A.x, A.y); c.lineTo(B.x, B.y); c.stroke(); if (u <= 1) starShape(c, B.x, B.y, 9, T * 6, '#fff6d0'); }
 function bubble(c, x, y, s, a, inner) { if (a <= 0) return; c.save(); c.globalAlpha = a; c.translate(x, y); c.scale(s, s); c.fillStyle = 'rgba(235,238,250,0.92)'; for (const [bx, by, br] of [[-40, 0, 34], [0, -14, 40], [40, 0, 34], [0, 18, 34]]) { c.beginPath(); c.arc(bx, by, br, 0, 7); c.fill(); } for (const [bx, by, br] of [[-60, 62, 10], [-78, 86, 6]]) { c.beginPath(); c.arc(bx, by, br, 0, 7); c.fill(); } inner(c); c.restore(); }
@@ -3666,21 +3674,21 @@ function titleCard(name, t0, text, len = TITLE) {
   shot(name, t0, t0 + len, (lt, T) => ({
     custom: () => {
       const c = ctx; c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
-      c.drawImage(ART.sky, 0, 0); const mr = 120; c.drawImage(ART.moon, 1560 - mr * 320 / 300, 230 - mr * 320 / 300, mr * 640 / 300, mr * 640 / 300);
+      c.drawImage(ART.sky, 0, 0); const mr = 120; c.drawImage(ART.moon, W * 0.81 - mr * 320 / 300, H * 0.21 - mr * 320 / 300, mr * 640 / 300, mr * 640 / 300);
       const pin = spring(lt - 0.15, 9, 0.5), out = 1 - expoIn(clamp((lt - (len - 0.35)) / 0.35)); const s1 = pin * out;
       c.textAlign = 'center'; c.textBaseline = 'middle';
-      const fs = text.length > 18 ? 120 : 160;
-      c.save(); c.translate(960, 480); c.scale(s1, s1); c.font = `700 ${fs}px Fredoka`; c.fillStyle = '#0b1030'; c.fillText(text, 7, 7); c.fillStyle = '#f3ead0'; c.fillText(text, 0, 0); c.restore();
-      const pk = sineInOut(clamp((lt - 0.6) / 0.5)) * out; c.setTransform(1.5, 0, 0, 1.5, 1380, 1080 + 260 - 230 * pk); LX = 1; drawOwl(c, base({ yaw: 0.2, gx: -0.8, gy: -0.6, happy: lt > 1.5 && lt < 2.2 ? 1 : 0 }), 'all');
+      let fs = text.length > 18 ? 120 : 160; c.font = `700 ${fs}px Fredoka`; const tw = c.measureText(text).width; if (tw > W * 0.88) fs = Math.floor(fs * W * 0.88 / tw);
+      c.save(); c.translate(W / 2, H * 0.444); c.scale(s1, s1); c.font = `700 ${fs}px Fredoka`; c.fillStyle = '#0b1030'; c.fillText(text, 7, 7); c.fillStyle = '#f3ead0'; c.fillText(text, 0, 0); c.restore();
+      const pk = sineInOut(clamp((lt - 0.6) / 0.5)) * out; c.setTransform(1.5, 0, 0, 1.5, W * 0.72, H + 260 - 230 * pk); LX = 1; drawOwl(c, base({ yaw: 0.2, gx: -0.8, gy: -0.6, happy: lt > 1.5 && lt < 2.2 ? 1 : 0 }), 'all');
       c.setTransform(1, 0, 0, 1, 0, 0); c.textAlign = 'left'; c.textBaseline = 'alphabetic';
       grade(c, { mul: GR.cool[0], sat: 0.95 });
     }
   }));
 }
 // the signature wipe: Owl rides across the screen on his bike, revealing the next shot behind him. Adds a 2 s shot at t0 and its engine sound.
-function owlRideFn(T, sx) { return (x) => { camT(x, RIDE_CAM); const b = riderBike(sx, 930, sx / 84); b.shakeY = idleShake(T, 1.2, 30); b.light = true; drawBikeOwl(x, b, ride({ lean: 0.38, sq: 0.94, yaw: 0.7, gx: 0.8, gy: 0.2, lid: 0.15, angry: 0.6, twig: true, tuft: -0.4 })); }; }
+function owlRideFn(T, sx) { return (x) => { camT(x, RIDE_CAM); const b = riderBike(sx, H - 150, sx / 84); b.shakeY = idleShake(T, 1.2, 30); b.light = true; drawBikeOwl(x, b, ride({ lean: 0.38, sq: 0.94, yaw: 0.7, gx: 0.8, gy: 0.2, lid: 0.15, angry: 0.6, twig: true, tuft: -0.4 })); }; }
 function bikeWipe(name, t0) {
-  shot(name, t0, t0 + 2, (lt, T) => ({ custom: () => { const u = lt / 2; const sx = lerp(-650, 2650, sineInOut(u) * 0.35 + u * 0.65); wipeShot(T, t0 - 0.001, t0 + 2 + 0.001, sx, owlRideFn(T, sx), 1980, 'cool'); } }));
+  shot(name, t0, t0 + 2, (lt, T) => ({ custom: () => { const u = lt / 2; const sx = lerp(-650, W + 730, sineInOut(u) * 0.35 + u * 0.65); wipeShot(T, t0 - 0.001, t0 + 2 + 0.001, sx, owlRideFn(T, sx), 1980, 'cool'); } }));
   engineKeys([[t0 - 0.02, 900, 0], [t0, 3500, 0.8], [t0 + 0.3, 9800, 1.1], [t0 + 1.65, 9300, 1.0], [t0 + 2, 2000, 0]]);
 }
 // darkness: returns a post-hook that blacks out the frame by d(T) (0..1) and, when dark, redraws only eyes(c) in world space
@@ -3692,11 +3700,12 @@ function endCard(name, t0, len = 2.5) {
   shot(name, t0, t0 + len, (lt, T) => ({
     custom: () => {
       const c = ctx; c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
-      c.drawImage(ART.sky, 0, 0); const mr = 230; c.drawImage(ART.moon, 960 - mr * 320 / 300, 380 - mr * 320 / 300, mr * 640 / 300, mr * 640 / 300);
-      const u = clamp((lt - 0.05) / 2.35); const fx = lerp(-260, 2260, u), fy = 380 - 90 * Math.sin(Math.PI * u);
+      const DY = (H - 1080) / 2;
+      c.drawImage(ART.sky, 0, 0); const mr = 230; c.drawImage(ART.moon, W / 2 - mr * 320 / 300, 380 + DY - mr * 320 / 300, mr * 640 / 300, mr * 640 / 300);
+      const u = clamp((lt - 0.05) / 2.35); const fx = lerp(-260, W + 340, u), fy = 380 + DY - 90 * Math.sin(Math.PI * u);
       c.setTransform(1.6, 0, 0, 1.6, fx, fy); LX = 1; drawOwl(c, flyPose(lt * 2 * Math.PI * 2.6, { yaw: 0.7 }), 'all');
       c.setTransform(1, 0, 0, 1, 0, 0);
-      const pop = spring(lt - 0.5, 10, 0.45); c.save(); c.translate(960, 800); c.scale(pop, pop);
+      const pop = spring(lt - 0.5, 10, 0.45) * Math.min(1, W / 1300); c.save(); c.translate(W / 2, 800 + DY); c.scale(pop, pop);
       c.font = '700 190px Fredoka'; c.textBaseline = 'middle'; c.textAlign = 'left';
       const wOops = c.measureText('Oops').width, wAll = c.measureText('OopsOwl').width;
       c.fillStyle = '#0b1030'; c.fillText('OopsOwl', -wAll / 2 + 8, 8); c.fillStyle = '#f3ead0'; c.fillText('Oops', -wAll / 2, 0); c.fillStyle = '#f2b01c'; c.fillText('Owl', -wAll / 2 + wOops, 0);
@@ -3753,11 +3762,18 @@ window.OopsOwl = (function () {
     const g = 0.89 / (pk || 1); for (let ch = 0; ch < 2; ch++) { const d = out.getChannelData(ch); for (let i = 0; i < d.length; i++) d[i] *= g; }
     return out;
   }
+  // ---------- aspect ----------
+  function setAspect(a) {
+    const tall = a === '9:16'; VERTICAL = tall; W = tall ? 1080 : 1920; H = tall ? 1920 : 1080;
+    offOld = null; offNew = null; setupCanvas(); buildArt();
+    const cvs = document.getElementById('c'); if (cvs) cvs.classList.toggle('tall', tall);
+    if (ui.asp) ui.asp.textContent = tall ? '9:16' : '16:9';
+  }
   // ---------- UI ----------
   function mkUI() {
     const css = document.createElement('style');
     css.textContent = `body{margin:0;background:#0b0d1a;color:#e8e4d8;font:14px/1.4 system-ui,sans-serif}#oo-wrap{max-width:1280px;margin:0 auto;padding:12px}
-#c{width:100%;height:auto;aspect-ratio:16/9;display:block;background:#000;border-radius:8px}
+#c{display:block;background:#000;border-radius:8px;margin:0 auto;width:100%;height:auto;max-height:78vh;object-fit:contain}#c.tall{width:auto;height:78vh}
 #oo-bar{display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap}#oo-bar button{background:#f2b01c;color:#111;border:0;border-radius:6px;padding:8px 14px;font-weight:700;cursor:pointer}
 #oo-bar button.sec{background:#2a2f4a;color:#e8e4d8}#oo-bar button:disabled{opacity:.5;cursor:default}#oo-seek{flex:1;min-width:200px}#oo-t{font-variant-numeric:tabular-nums;min-width:110px}
 #oo-msg{margin-top:8px;opacity:.8}#oo-title{font-weight:700;font-size:18px;margin:0 0 8px}`;
@@ -3766,10 +3782,11 @@ window.OopsOwl = (function () {
     const h = document.createElement('div'); h.id = 'oo-title'; h.textContent = cfg.title || 'OopsOwl'; wrap.appendChild(h);
     let cvs = document.getElementById('c'); if (!cvs) { cvs = document.createElement('canvas'); cvs.id = 'c'; } wrap.appendChild(cvs);
     const bar = document.createElement('div'); bar.id = 'oo-bar';
-    bar.innerHTML = `<button id="oo-play" disabled>Loading…</button><input id="oo-seek" type="range" min="0" max="1000" value="0"><span id="oo-t">0:00 / 0:00</span><button id="oo-exp" class="sec" disabled>Export video</button>`;
+    bar.innerHTML = `<button id="oo-play" disabled>Loading…</button><input id="oo-seek" type="range" min="0" max="1000" value="0"><span id="oo-t">0:00 / 0:00</span><button id="oo-asp" class="sec" disabled>16:9</button><button id="oo-exp" class="sec" disabled>Export video</button>`;
     wrap.appendChild(bar); const msg = document.createElement('div'); msg.id = 'oo-msg'; wrap.appendChild(msg);
     document.body.appendChild(wrap);
-    ui = { play: bar.querySelector('#oo-play'), seek: bar.querySelector('#oo-seek'), t: bar.querySelector('#oo-t'), exp: bar.querySelector('#oo-exp'), msg };
+    ui = { play: bar.querySelector('#oo-play'), seek: bar.querySelector('#oo-seek'), t: bar.querySelector('#oo-t'), exp: bar.querySelector('#oo-exp'), asp: bar.querySelector('#oo-asp'), msg };
+    ui.asp.onclick = () => { pause(); setAspect(VERTICAL ? '16:9' : '9:16'); draw(tStart); };
     ui.play.onclick = () => playing ? pause() : play();
     ui.seek.oninput = () => { const t = ui.seek.value / 1000 * total; if (playing) { pause(); } tStart = t; draw(t); };
     ui.exp.onclick = () => exportVideo();
@@ -3787,7 +3804,7 @@ window.OopsOwl = (function () {
   // ---------- export ----------
   async function encode(onProgress) {
     if (!('VideoEncoder' in window)) throw new Error('This browser has no WebCodecs. Use desktop Chrome or Edge.');
-    const W = 1920, H = 1080; const frames = Math.round(total * FPS);
+    const frames = Math.round(total * FPS);
     let vcodec = 'vp09.00.40.08'; const sup = await VideoEncoder.isConfigSupported({ codec: vcodec, width: W, height: H, bitrate: 10e6, framerate: FPS }).catch(() => ({ supported: false }));
     if (!sup.supported) vcodec = 'vp8';
     const muxer = new WebMMuxer.Muxer({ target: new WebMMuxer.ArrayBufferTarget(), video: { codec: vcodec === 'vp8' ? 'V_VP8' : 'V_VP9', width: W, height: H, frameRate: FPS }, audio: { codec: 'A_OPUS', sampleRate: 48000, numberOfChannels: 2 }, firstTimestampBehavior: 'offset' });
@@ -3817,13 +3834,13 @@ window.OopsOwl = (function () {
     muxer.finalize(); return new Blob([muxer.target.buffer], { type: 'video/webm' });
   }
   async function exportVideo() {
-    pause(); ui.exp.disabled = true; ui.play.disabled = true; const t0 = performance.now();
+    pause(); ui.exp.disabled = true; ui.play.disabled = true; ui.asp.disabled = true; const t0 = performance.now();
     try {
       const blob = await encode(p => { ui.msg.textContent = `Rendering… ${Math.round(p * 100)}%`; });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (cfg.file || cfg.title || 'oopsowl').replace(/[^\w\-]+/g, '_') + '.webm'; document.body.appendChild(a); a.click();
-      ui.msg.textContent = `Done in ${Math.round((performance.now() - t0) / 1000)} s — ${(blob.size / 1e6).toFixed(1)} MB WebM downloaded (YouTube accepts WebM).`;
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (cfg.file || cfg.title || 'oopsowl').replace(/[^\w\-]+/g, '_') + (VERTICAL ? '_9x16' : '_16x9') + '.webm'; document.body.appendChild(a); a.click();
+      ui.msg.textContent = `Done in ${Math.round((performance.now() - t0) / 1000)} s — ${W}×${H} ${(blob.size / 1e6).toFixed(1)} MB WebM downloaded (YouTube accepts WebM).`;
     } catch (e) { ui.msg.textContent = 'Export failed: ' + e.message; }
-    ui.exp.disabled = false; ui.play.disabled = false;
+    ui.exp.disabled = false; ui.play.disabled = false; ui.asp.disabled = false;
   }
   return {
     FPS,
@@ -3835,14 +3852,16 @@ window.OopsOwl = (function () {
       SH.sort((a, b) => a.t0 - b.t0);
       window.seek = t => frameAt(t); window.TOTAL = total;
       if (!cfg.headless) mkUI();
-      setupCanvas(); buildArt(); await document.fonts.load('700 100px Fredoka');
+      if (cfg.verticalZoom) VZOOM = cfg.verticalZoom;
+      let asp = cfg.aspect; try { const q = new URLSearchParams(location.search).get('aspect'); if (q) asp = q.replace('x', ':'); } catch (e) { }
+      setAspect(asp === '9:16' ? '9:16' : '16:9'); await document.fonts.load('700 100px Fredoka');
       draw(0);
       if (!cfg.headless) ui.msg.textContent = 'Preparing sound…';
       audioBuf = await buildAudio();
-      if (!cfg.headless) { ui.play.disabled = false; ui.play.textContent = 'Play'; ui.exp.disabled = false; ui.msg.textContent = `Ready — ${fmt(total)} at ${FPS} fps. Export renders a 1920×1080 video with sound in this browser.`; }
+      if (!cfg.headless) { ui.play.disabled = false; ui.play.textContent = 'Play'; ui.exp.disabled = false; ui.asp.disabled = false; ui.msg.textContent = `Ready — ${fmt(total)} at ${FPS} fps. The 16:9 / 9:16 button switches the frame; Export renders the current one with sound in this browser.`; }
       window.ready = true; return { total };
     },
-    encode, frameAt, get audio() { return audioBuf; }
+    encode, frameAt, setAspect, get audio() { return audioBuf; }
   };
 })();
 
